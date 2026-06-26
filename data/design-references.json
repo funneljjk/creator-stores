@@ -1,0 +1,21 @@
+{
+  "note": "Saved design references. The generator picks the theme whose reference set best fits the creator's archetype/concept, then the store is styled to emulate it.",
+  "references": [
+    { "name": "Stan Store", "url": "https://www.stan.store", "category": "link-in-bio", "inspires": ["creator", "coach"] },
+    { "name": "Beacons", "url": "https://beacons.ai", "category": "link-in-bio", "inspires": ["creator"] },
+    { "name": "Bento", "url": "https://bento.me", "category": "link-in-bio", "inspires": ["editorial", "creator"] },
+    { "name": "Fourthwall", "url": "https://www.fourthwall.com", "category": "creator-commerce", "inspires": ["boutique", "creator"] },
+    { "name": "Linktree", "url": "https://linktr.ee", "category": "link-in-bio", "inspires": ["creator"] },
+    { "name": "Gumroad", "url": "https://gumroad.com", "category": "creator-commerce", "inspires": ["boutique"] },
+    { "name": "Kajabi", "url": "https://kajabi.com", "category": "creator-commerce", "inspires": ["capital", "academy"] },
+    { "name": "Podia", "url": "https://www.podia.com", "category": "creator-commerce", "inspires": ["academy"] },
+    { "name": "Patreon", "url": "https://www.patreon.com", "category": "membership", "inspires": ["capital", "creator"] },
+    { "name": "인프런 Inflearn", "url": "https://www.inflearn.com", "category": "course-kr", "inspires": ["academy"] },
+    { "name": "클래스101", "url": "https://class101.net", "category": "course-kr", "inspires": ["academy", "boutique"] },
+    { "name": "크몽 Kmong", "url": "https://kmong.com", "category": "marketplace-kr", "inspires": ["boutique"] },
+    { "name": "탈잉 Taling", "url": "https://taling.me", "category": "class-kr", "inspires": ["coach"] },
+    { "name": "Godly", "url": "https://godly.website", "category": "gallery", "inspires": ["editorial", "serene"] },
+    { "name": "Land-book", "url": "https://land-book.com", "category": "gallery", "inspires": ["editorial", "serene"] },
+    { "name": "Refero", "url": "https://refero.design", "category": "gallery-kr", "inspires": ["academy", "editorial"] }
+  ]
+}

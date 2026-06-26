@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "builder",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 8090,
+      "autoPort": false
+    },
+    {
+      "name": "homepage",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve.js"],
+      "port": 8080
+    }
+  ]
+}

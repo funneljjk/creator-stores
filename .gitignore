@@ -1,0 +1,18 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+/tmp/
+llms-full.txt
+openapi.yaml
+
+# secrets — NEVER commit (keys live in GitHub Actions secrets / local files only)
+.runmoa.json
+.ai.json
+.search.json
+
+# build / runtime artifacts
+.cache/
+.deploy/
+scratchpad/

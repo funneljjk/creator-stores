@@ -1,0 +1,86 @@
+name: Generate store
+
+# Online generator: run from the GitHub web UI (Actions → Generate store →
+# Run workflow), paste a YouTube channel URL, and it analyzes + writes bespoke
+# copy + deploys a permanent public store. Reuses server.js headlessly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_url:
+        description: 'YouTube channel URL or @handle (e.g. https://www.youtube.com/@mkbhd)'
+        required: true
+      blueprint:
+        description: 'solution key — optional (educator/insight/commerce/relax/coach/finance/creator). blank = auto'
+        required: false
+        default: ''
+      modules:
+        description: 'modules CSV — optional (e.g. courses,digital,community). blank = blueprint default'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install yt-dlp
+        run: pip install --quiet yt-dlp
+
+      - name: Compute store slug from the YouTube handle
+        id: slug
+        run: |
+          U='${{ github.event.inputs.youtube_url }}'
+          S=$(printf '%s' "$U" | sed -nE 's#.*@([A-Za-z0-9_.-]+).*#\1#p')
+          [ -z "$S" ] && S=$(printf '%s' "$U" | sed -nE 's#.*channel/(UC[A-Za-z0-9_-]+).*#\1#p')
+          [ -z "$S" ] && S=store
+          S=$(printf '%s' "$S" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-|-$//g')
+          echo "slug=$S" >> "$GITHUB_OUTPUT"
+          echo "Store slug: $S"
+
+      - name: Generate store (headless server.js + API call)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SERP_API_KEY: ${{ secrets.SERP_API_KEY }}
+          PORT: '8090'
+        run: |
+          node server.js & SRV=$!
+          for i in $(seq 1 40); do curl -sf http://localhost:8090/ >/dev/null 2>&1 && break; sleep 1; done
+          BODY=$(jq -n \
+            --arg u '${{ github.event.inputs.youtube_url }}' \
+            --arg b '${{ github.event.inputs.blueprint }}' \
+            --arg m '${{ github.event.inputs.modules }}' \
+            --arg h '${{ secrets.RUNMOA_SITE_HOST }}' \
+            --arg k '${{ secrets.RUNMOA_STOREFRONT_KEY }}' \
+            '{url:$u, publish:false}
+             + (if $b != "" then {blueprintKey:$b} else {} end)
+             + (if $m != "" then {modules:($m|split(","))} else {} end)
+             + (if $h != "" then {siteHost:$h} else {} end)
+             + (if $k != "" then {storefrontKey:$k} else {} end)')
+          echo "Request: $BODY"
+          curl -sf -X POST http://localhost:8090/api/generate \
+            -H 'Content-Type: application/json' -d "$BODY" --max-time 240 | jq '{ok, counts}'
+          kill $SRV 2>/dev/null || true
+          test -f web/js/data.js
+
+      - name: Publish store to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web
+          destination_dir: ${{ steps.slug.outputs.slug }}
+          keep_files: true
+          commit_message: 'store: ${{ steps.slug.outputs.slug }}'
+
+      - name: Output public URL
+        run: |
+          echo "## ✅ 공개 사이트" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ steps.slug.outputs.slug }}/" >> "$GITHUB_STEP_SUMMARY"

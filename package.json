@@ -1,0 +1,20 @@
+{
+  "name": "create-api-home",
+  "version": "2.0.0",
+  "description": "Creator Solution Builder — input a YouTube link (+ runmoa API keys), auto-analyze the channel, recommend the optimal monetization solution, generate a tailored storefront, and deploy it to runmoa.",
+  "type": "module",
+  "bin": {
+    "create-api-home": "bin/create-api-home.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "serve": "node scripts/serve.js",
+    "build": "node bin/create-api-home.js",
+    "demo": "node bin/create-api-home.js https://www.youtube.com/@jangproai --dry-run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {}
+}

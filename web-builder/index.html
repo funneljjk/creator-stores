@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creator Solution Builder — 유튜브 링크로 내 수익화 사이트 만들기</title>
+  <meta name="description" content="유튜브 링크 하나로 채널을 분석해 강의·상품·멤버십을 갖춘 나만의 수익화 사이트를 자동 생성합니다." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="./builder.css" />
+</head>
+<body>
+  <header class="bhd">
+    <div class="bhd__in">
+      <div class="bhd__logo"><span class="mark">✦</span> Creator Studio</div>
+      <nav class="bhd__nav">
+        <a href="#how">작동 방식</a>
+        <a href="/store/" target="_blank" rel="noopener">예시 보기</a>
+      </nav>
+      <a class="btn btn--brand btn--sm bhd__store" href="#start">시작하기</a>
+    </div>
+  </header>
+
+  <main id="wiz">
+    <section class="step" id="stepInput">
+      <!-- HERO -->
+      <div class="hero2" id="start">
+        <div class="hero2__copy">
+          <span class="pill"><span class="dotp"></span> 유튜브 분석 · 자동 솔루션 · runmoa 배포</span>
+          <h1>링크 하나로,<br><em>나만의</em> 수익화<br>사이트를 <span class="u">5분 만에</span>.</h1>
+          <p class="lead">유튜브 채널을 분석해 강의·상품·멤버십을 갖춘 사이트를 자동으로 만들고,
+            인스타·블로그까지 한 곳에 모아 드립니다.</p>
+
+          <form id="form" class="builder-form">
+            <div class="bigfield">
+              <span class="bigfield__ico">▶</span>
+              <input id="url" type="text" placeholder="youtube.com/@채널  또는  @핸들" autocomplete="off" />
+              <button type="submit" class="btn btn--accent btn--lg">분석 시작 →</button>
+            </div>
+            <p class="autonote">✦ 인스타·스레드·X·틱톡·블로그를 <b>자동으로 찾아</b> 버튼과 피드에 넣습니다. 따로 입력할 필요 없어요.</p>
+            <button type="button" class="linkbtn" id="toggleEmbeds">＋ 게시물 링크 직접 추가 (선택)</button>
+            <div class="keys" id="embedsBox" hidden>
+              <label style="font-size:12px;font-weight:700;color:var(--ink-2s);display:block;margin-bottom:6px">게시물 링크 — 한 줄에 하나 (자동 발견 외 추가하고 싶을 때만)</label>
+              <textarea id="embeds" rows="3" placeholder="https://www.instagram.com/p/XXXX/&#10;https://x.com/user/status/123456&#10;https://www.tiktok.com/@user/video/123456" style="width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+              <p class="keys__note">붙여넣은 게시물이 자동 발견 채널과 함께 한 피드에 섞여 노출됩니다. (공개 게시물만)</p>
+            </div>
+            <div class="samples">예시로 체험: <a href="#" data-sample="@mkbhd">@mkbhd</a> · <a href="#" data-sample="@jangproai">@jangproai</a></div>
+          </form>
+
+          <div class="hero2__trust">
+            <div><span class="tick">✓</span> <b>노코드</b> · 코딩 0줄</div>
+            <div><span class="tick">✓</span> <b>자동 분석</b> · 최적 모델 추천</div>
+            <div><span class="tick">✓</span> <b>전채널</b> 통합</div>
+          </div>
+        </div>
+
+        <!-- real product mockup -->
+        <div class="mock">
+          <div class="mock__win">
+            <div class="mock__bar"><span class="mock__dot r"></span><span class="mock__dot y"></span><span class="mock__dot g"></span><span class="mock__url">my-store.runmoa.com</span></div>
+            <iframe class="mock__frame" src="/store/" title="생성된 스토어 미리보기" loading="lazy" scrolling="no"></iframe>
+          </div>
+          <div class="mock__float"><span class="e">🧠</span> 최적 솔루션 자동 추천</div>
+          <div class="mock__badge"><span class="e">💸</span> 강의·상품·멤버십 판매</div>
+        </div>
+      </div>
+
+      <!-- persona marquee -->
+      <div class="marq"><div class="marq__track">
+        <span>유튜버<span></span></span><span>인플루언서</span><span>스레더</span><span>블로거</span><span>판매자</span><span>쇼핑몰</span><span>강사</span><span>코치</span>
+        <span>유튜버</span><span>인플루언서</span><span>스레더</span><span>블로거</span><span>판매자</span><span>쇼핑몰</span><span>강사</span><span>코치</span>
+      </div></div>
+
+      <!-- how it works (bento) -->
+      <section class="how" id="how">
+        <div class="how__head">
+          <h2>채널을 넣으면, 나머지는 자동입니다</h2>
+          <p>분석부터 솔루션 추천, 사이트 생성, runmoa 배포까지 한 흐름으로.</p>
+        </div>
+        <div class="bento">
+          <div class="bcard bcard--lg">
+            <div class="bstep">STEP 01</div><div class="bcard__ico">🔍</div>
+            <h3>채널 자동 분석</h3>
+            <p>최근 영상·쇼츠·소개글을 읽고, 유튜브 About에서 인스타·블로그 링크까지 자동으로 찾아냅니다.</p>
+            <div class="bchips"><span class="bchip">영상·쇼츠</span><span class="bchip">소셜 발견</span><span class="bchip">블로그 RSS</span></div>
+          </div>
+          <div class="bcard bcard--dark">
+            <div class="bstep">STEP 02</div><div class="bcard__ico">🧠</div>
+            <h3>최적 솔루션 추천</h3>
+            <p>채널 유형을 분류해 교육·멤버십·커머스·코칭 중 가장 수익이 나는 모델을 근거와 함께 제안합니다.</p>
+            <div class="bchips"><span class="bchip">6개 아키타입</span><span class="bchip">모듈 조합</span></div>
+          </div>
+          <div class="bcard bcard--sm">
+            <div class="bstep">STEP 03</div><div class="bcard__ico">🎨</div>
+            <h3>사이트 생성</h3>
+            <p>배너·소셜 허브·영상 피드·강의·상품을 갖춘 사이트를 즉시 생성.</p>
+          </div>
+          <div class="bcard bcard--sm">
+            <div class="bstep">STEP 04</div><div class="bcard__ico">🚀</div>
+            <h3>runmoa 배포</h3>
+            <p>API 키 검증 후 강의·상품·코칭을 실제 등록합니다.</p>
+          </div>
+          <div class="bcard bcard--sm">
+            <div class="bcard__ico">💳</div>
+            <h3>바로 판매</h3>
+            <p>장바구니·결제·수익 대시보드까지 내장.</p>
+          </div>
+          <div class="bcard bcard--wide">
+            <div>
+              <h3>지금 내 채널로 만들어 보세요</h3>
+              <p>설치도, 디자인도 필요 없습니다. 링크만 붙여넣으면 끝.</p>
+            </div>
+            <a class="btn btn--accent btn--lg" href="#start">무료로 시작하기 →</a>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="bft">Creator Studio · create-api-home · YouTube 분석 → 최적 솔루션 → runmoa 배포</footer>
+
+  <script src="./builder.js"></script>
+</body>
+</html>
