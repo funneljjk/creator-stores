@@ -183,7 +183,7 @@ export function coachingToContentPayload(session, { categoryIds, featuredImage, 
     description_html: `<div style="line-height:1.7">${escapeHtml(session.description)}</div>` +
       `<p style="color:#667">진행 방식: ${escapeHtml(session.mode)} · 정원 ${session.seats}명 · ${escapeHtml(session.schedule)}</p>`,
     category_ids: categoryIds,
-    featured_image: featuredImage || null,
+    featured_image: session.thumbnail || featuredImage || null,
     status,
     options: [{
       title: truncate(session.schedule || '세션 예약', 120),

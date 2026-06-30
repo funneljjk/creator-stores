@@ -37,11 +37,15 @@ export function imgHash(s) {
   return (h >>> 0).toString(36);
 }
 
-// prompt tuned for a clean commerce thumbnail (no text/logo, on-topic)
+// prompt tuned for a clean commerce thumbnail (no text/logo, on-topic).
+// REALISTIC — real-world product/lifestyle photography, NOT sci-fi/abstract.
 export function thumbPrompt(item, kind) {
   const t = item.title || '';
   if (kind === 'product') {
-    return `High-quality e-commerce product thumbnail representing "${t}" (${item.category || 'digital product'}). Clean minimal studio background, soft lighting, centered subject, vibrant, photorealistic. No text, no words, no logo, no watermark. Square composition.`;
+    return `Realistic professional commercial product photography for "${t}" (${item.category || 'product'}). A real, tangible physical product shown on a clean neutral studio background with soft natural lighting, shallow depth of field, photorealistic, high detail, like a real online-store listing photo. Absolutely NO science-fiction, NO robots, NO holograms, NO neon, NO abstract 3D — keep it grounded and real. No text, no words, no logo, no watermark. Square 1:1.`;
   }
-  return `Modern online-course cover thumbnail for a class titled "${t}". Sleek tech-editorial style, abstract/illustrative on-topic imagery, vibrant gradient accents. No text, no words, no logo, no watermark. 16:9 composition.`;
+  if (kind === 'coaching') {
+    return `Realistic warm photograph for a coaching/class session: "${t}". Real people in a bright modern workspace or classroom, candid mentoring/learning moment, natural lighting, photorealistic, inviting. NO sci-fi, NO robots, NO abstract. No text, no logo, no watermark. 16:9.`;
+  }
+  return `Clean realistic editorial thumbnail for an online course "${t}". Real-world relevant imagery (desk setup, hands working, real objects related to the topic), bright professional photography style, subtle modern accents. NOT sci-fi, NOT robots, NOT heavy abstract. No text, no words, no logo, no watermark. 16:9.`;
 }

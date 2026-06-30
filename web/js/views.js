@@ -45,8 +45,10 @@ window.Views = (function () {
     '</div>';
   }
   function coachCard(s) {
-    return '<div class="ccard"><div class="ccard__thumb pcover g' + (s.cover || 0) + '">' +
-        '<div class="pcover__ico">' + (s.icon || '🗓️') + '</div></div>' +
+    var thumb = s.thumbnail
+      ? '<div class="ccard__thumb"><img loading="lazy" alt="' + esc(s.title) + '" src="' + esc(s.thumbnail) + '"></div>'
+      : '<div class="ccard__thumb pcover g' + (s.cover || 0) + '"><div class="pcover__ico">' + (s.icon || '🗓️') + '</div></div>';
+    return '<div class="ccard">' + thumb +
       '<div class="ccard__body"><div class="ccard__cat">' + esc(s.mode) + ' · 정원 ' + s.seats + '명</div>' +
         '<div class="ccard__title" role="heading" aria-level="3">' + esc(s.title) + '</div>' +
         '<div class="ccard__inst">🗓️ ' + esc(s.schedule) + '</div>' +

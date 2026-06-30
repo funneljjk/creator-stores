@@ -161,15 +161,9 @@ async function buildHub(profile, discovered, body) {
   const ytFlat = (profile.feedVideos || []).filter((v) => !fullIds.has(v.id)).map((v) => ({ source: 'youtube', id: v.id, title: v.title, thumbnail: v.thumbnail, url: v.url, duration: v.duration }));
   const ytItems = ytFull.concat(ytFlat);
   const shortItems = (profile.shorts || []).map((v) => ({ source: 'short', id: v.id, title: v.title, thumbnail: v.thumbnail, url: v.url }));
-  let embedItems = parseEmbeds(body && body.embeds);
-  // demo: if the creator hasn't supplied post URLs yet, seed one stable public
-  // X post so the mixed-feed UI is visible (replace by adding links in builder)
-  if (!embedItems.length) {
-    embedItems = [
-      { kind: 'embed', source: 'x', id: '20', url: 'https://twitter.com/jack/status/20', embedUrl: 'https://platform.twitter.com/embed/Tweet.html?id=20&theme=light&dnt=true', demo: true },
-      { kind: 'embed', source: 'instagram', placeholder: true, demo: true },
-    ];
-  }
+  // only real, creator-supplied post embeds — no demo/placeholder seeding
+  // (the seeded jack tweet / instagram placeholder looked like fake content)
+  const embedItems = parseEmbeds(body && body.embeds);
   // weave: 2 videos, 1 short, repeat; sprinkle an embed every 4 items
   const base = [];
   let yi = 0, si = 0;
@@ -233,12 +227,14 @@ async function apiAnalyze(req, res) {
 // web/genimg (served at /store/genimg, deployed with the store), set .thumbnail.
 // deterministic filename → generate + deploy reuse the same file (no re-gen).
 const GENIMG_DIR = path.join(__dirname, 'web', 'genimg');
-function genImgName(item) { return 'g_' + imgHash((item.id || '') + '|' + (item.title || '')) + '.png'; }
+const IMG_VER = 'v2'; // bump when thumbPrompt changes so cached images regenerate
+function genImgName(item) { return 'g' + IMG_VER + '_' + imgHash((item.id || '') + '|' + (item.title || '')) + '.png'; }
 async function genThumbnails(catalog, key) {
   if (!key) return 0;
   try { fs.mkdirSync(GENIMG_DIR, { recursive: true }); } catch { /* ignore */ }
   const list = [
     ...(catalog.courses || []).map((o) => ({ o, kind: 'course' })),
+    ...(catalog.coaching || []).map((o) => ({ o, kind: 'coaching' })),
     ...(catalog.products || []).map((o) => ({ o, kind: 'product' })),
   ];
   let n = 0;
@@ -385,6 +381,7 @@ async function apiDeploy(req, res) {
     const origin = ((req.headers['x-forwarded-proto'] || 'https') + '://' + host).replace(/\/+$/, '');
     const fixThumb = (o) => { if (o && typeof o.thumbnail === 'string' && o.thumbnail.startsWith('genimg/')) o.thumbnail = reachable ? origin + '/store/' + o.thumbnail : ''; };
     (catalog.courses || []).forEach(fixThumb);
+    (catalog.coaching || []).forEach(fixThumb);
     (catalog.products || []).forEach(fixThumb);
     const errText = (e) => (e.body ? (typeof e.body === 'string' ? e.body : JSON.stringify(e.body)).slice(0, 220) : e.message);
 

@@ -42,10 +42,10 @@ async function fetchChannelMeta(baseUrl) {
 function mapVideoEntry(e) {
   if (!e) return null;
   const id = e.id;
-  // hqdefault (480×360, ~30KB, always exists) instead of maxres (1280px, ~200KB):
-  // cards render ≤560px, so maxres was 5-10× over-fetch and the main feed-load lag.
+  // sddefault (640×480, always exists) — sharper than hqdefault(480) in the feed
+  // cards without the 5-10× over-fetch of maxres(1280). Good sharpness/load balance.
   const thumb =
-    (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null) ||
+    (id ? `https://i.ytimg.com/vi/${id}/sddefault.jpg` : null) ||
     pickThumb(e.thumbnails, 'best');
   return {
     id,
