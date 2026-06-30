@@ -23,7 +23,11 @@ cd "$DEPLOY"
 git init -q -b main
 git add -A
 git -c user.email=deploy@local -c user.name=create-api-home commit -q -m "deploy store $(date +%Y-%m-%d-%H%M)"
-git remote add origin "https://github.com/$OWNER/$REPO.git" 2>/dev/null || git remote set-url origin "https://github.com/$OWNER/$REPO.git"
+# on a host (Render etc.) there is no `gh` credential helper — push with the
+# GH_TOKEN/GITHUB_TOKEN env if present; locally fall back to gh's helper.
+TOK="${GH_TOKEN:-$GITHUB_TOKEN}"
+if [ -n "$TOK" ]; then REMOTE="https://x-access-token:${TOK}@github.com/$OWNER/$REPO.git"; else REMOTE="https://github.com/$OWNER/$REPO.git"; fi
+git remote add origin "$REMOTE" 2>/dev/null || git remote set-url origin "$REMOTE"
 git push -q -f origin main
 
 echo "▶ enabling GitHub Pages (main / root)"
