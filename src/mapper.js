@@ -140,7 +140,7 @@ function ytIdFromThumb(url) {
 /** 강의 → runmoa POST /contents (vod). The live API requires exactly ONE option
  * (base_price + download_limit_days ≤ 365) and ≥1 chapter, each chapter holding
  * ≥1 item with media_url + duration_text. */
-export function courseToContentPayload(course, { categoryIds, status = 'publish' } = {}) {
+export function courseToContentPayload(course, { categoryIds, featuredImage, status = 'publish' } = {}) {
   const vid = course.youtubeId || ytIdFromThumb(course.thumbnail) || course.preview;
   const mediaUrl = vid ? `https://www.youtube.com/watch?v=${vid}` : 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
   const lessons = (course.curriculum && course.curriculum.length)
@@ -156,7 +156,10 @@ export function courseToContentPayload(course, { categoryIds, status = 'publish'
     title: truncate(course.title, 120),
     description_html: buildCourseHtml(course),
     category_ids: categoryIds,
-    featured_image: course.thumbnail,
+    // content create REQUIRES a valid featured_image; course thumbnails can be
+    // missing (more designed courses than channel video thumbnails) → 422. Fall
+    // back to the brand banner/logo so VOD content always creates.
+    featured_image: course.thumbnail || featuredImage,
     status,
     options: [{
       title: '전체 강의 수강',

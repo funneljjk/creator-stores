@@ -120,8 +120,10 @@ export function designCourses(concept, archetype, brandName, videoThumbs = []) {
     const theme = themes[i % Math.max(1, themes.length)] || '';
     const c = designOne({ ...spec, _a: arche }, i, theme, brandName);
     // use a real channel thumbnail as cover imagery when available (visual), but
-    // the course itself stays an AI-designed offering (no video link/embed)
-    if (videoThumbs[i]) c.thumbnail = videoThumbs[i];
+    // the course itself stays an AI-designed offering (no video link/embed).
+    // cycle thumbnails so EVERY course gets one even when designed courses
+    // outnumber available video thumbnails (else featured_image is empty → 422).
+    if (videoThumbs.length) c.thumbnail = videoThumbs[i % videoThumbs.length];
     return c;
   });
 }

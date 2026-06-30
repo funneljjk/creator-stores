@@ -393,7 +393,7 @@ async function apiDeploy(req, res) {
       } catch (e) { failed.push({ kind: 'product', title, error: errText(e) }); }
     }
 
-    for (const c of catalog.courses) await upsertContent('course', c.title, courseToContentPayload(c, { categoryIds: [contentCat.id], status }));
+    for (const c of catalog.courses) await upsertContent('course', c.title, courseToContentPayload(c, { categoryIds: [contentCat.id], featuredImage: img, status }));
     for (const s of catalog.coaching) await upsertContent('coaching', s.title, coachingToContentPayload(s, { categoryIds: [contentCat.id], featuredImage: img, status }));
     if (productCat) {
       for (const p of catalog.products) await upsertProduct(p.title, productToProductPayload(p, { categoryId: productCat.id, featuredImage: img, status }));
