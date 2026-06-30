@@ -173,6 +173,10 @@ export function courseToContentPayload(course, { categoryIds, featuredImage, sta
 
 /** 코칭/클래스 → runmoa POST /contents (offline) body, with schedule/location. */
 export function coachingToContentPayload(session, { categoryIds, featuredImage, status = 'publish' } = {}) {
+  // offline option requires: base_price, sale_price(≤base_price), start_at,
+  // end_at, location_text. (earlier used price/duration_* → 422)
+  const base = session.price.base;
+  const sale = (session.price.sale != null && session.price.sale <= base) ? session.price.sale : base;
   return {
     content_type: 'offline',
     title: truncate(session.title, 120),
@@ -181,13 +185,13 @@ export function coachingToContentPayload(session, { categoryIds, featuredImage, 
     category_ids: categoryIds,
     featured_image: featuredImage || null,
     status,
-    location: session.mode || '온라인',
     options: [{
       title: truncate(session.schedule || '세션 예약', 120),
-      price: session.price.base,
-      sale_price: session.price.sale ?? session.price.base,
-      duration_start: '2026-07-01 14:00:00',
-      duration_end: '2026-07-01 16:00:00',
+      base_price: base,
+      sale_price: sale,
+      start_at: '2026-07-01 14:00:00',
+      end_at: '2026-07-01 16:00:00',
+      location_text: session.mode || '온라인',
     }],
   };
 }
@@ -197,7 +201,8 @@ export function productToProductPayload(product, { categoryId, featuredImage, st
   const body = {
     title: truncate(product.title, 120),
     category_id: categoryId,
-    featured_image: featuredImage || product.thumbnail || null,
+    // prefer the product's own (AI-generated) thumbnail; fall back to brand image
+    featured_image: product.thumbnail || featuredImage || null,
     description_html: `<div style="line-height:1.7">${escapeHtml(product.description)}</div>`,
     status,
     base_price: product.price.base,

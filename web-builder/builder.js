@@ -255,12 +255,32 @@
       return;
     }
     state.keys = { siteHost: host, storefrontKey: sf, serverKey: sv };
-    var btn = document.getElementById('genBtn'); btn.disabled = true; btn.textContent = '제작 중…';
+    var stop = genProgress();   // staged "지금 무엇을 하는지" indicator
     api('/api/generate', Object.assign({ url: state.url, blueprintKey: state.chosenKey, modules: state.modules, embeds: state.embeds }, state.keys))
       .then(function (res) {
-        if (res.error) { btn.disabled = false; btn.textContent = '이 솔루션으로 제작 + 런모아 배포 →'; return renderError(res.error); }
+        stop();
+        if (res.error) return renderError(res.error);
         renderGenerated(res);   // shows store, then auto-deploys to runmoa
-      }).catch(function (e) { renderError(e.message); });
+      }).catch(function (e) { stop(); renderError(e.message); });
+  }
+
+  // staged progress while /api/generate runs (AI copy + AI thumbnails take time).
+  // server work isn't streamed, so stages advance on a timer to show activity.
+  function genProgress() {
+    var steps = ['분석 데이터 불러오는 중', 'AI가 채널 맞춤 카피 작성', 'AI 썸네일 이미지 생성 (강의·상품)', '스토어 디자인 구성', '런모아 등록 준비'];
+    wiz.innerHTML = '<section class="step"><div class="analyzing"><div class="spin"></div>' +
+      '<h2>스토어를 제작하고 있어요</h2><p style="color:var(--ink-3);margin:6px 0 20px">AI 카피와 썸네일 이미지를 만드는 중 — 30초~1분 정도 걸려요</p>' +
+      '<ul class="steps-list" id="glist">' +
+      steps.map(function (l, i) { return '<li data-i="' + i + '"><span class="dot">' + (i + 1) + '</span>' + esc(l) + '</li>'; }).join('') +
+      '</ul></section>';
+    var lis = wiz.querySelectorAll('#glist li'), i = 0;
+    function tick() {
+      if (i > 0 && lis[i - 1]) { lis[i - 1].classList.remove('active'); lis[i - 1].classList.add('done'); lis[i - 1].querySelector('.dot').textContent = '✓'; }
+      if (i < lis.length) { lis[i].classList.add('active'); i++; }
+    }
+    tick();
+    var timer = setInterval(tick, 9000);
+    return function () { clearInterval(timer); lis.forEach(function (li) { li.classList.add('done'); li.classList.remove('active'); li.querySelector('.dot').textContent = '✓'; }); };
   }
 
   function renderGenerated(res) {

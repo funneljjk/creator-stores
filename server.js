@@ -21,6 +21,7 @@ import { parseEmbeds } from './src/embeds.js';
 import { recommend, BLUEPRINTS, MODULES } from './src/recommend.js';
 import { buildReport } from './src/deepanalysis.js';
 import { generateCopy } from './src/copygen.js';
+import { generateImage, mapLimit, imgHash, thumbPrompt } from './src/imagegen.js';
 import { buildCatalog } from './src/catalog.js';
 import { RunmoaClient, normalizeCategories } from './src/runmoa.js';
 import { courseToContentPayload, productToProductPayload, coachingToContentPayload } from './src/mapper.js';
@@ -228,6 +229,32 @@ async function apiAnalyze(req, res) {
   }
 }
 
+// AI thumbnails: generate one bespoke image per course + product, save to
+// web/genimg (served at /store/genimg, deployed with the store), set .thumbnail.
+// deterministic filename → generate + deploy reuse the same file (no re-gen).
+const GENIMG_DIR = path.join(__dirname, 'web', 'genimg');
+function genImgName(item) { return 'g_' + imgHash((item.id || '') + '|' + (item.title || '')) + '.png'; }
+async function genThumbnails(catalog, key) {
+  if (!key) return 0;
+  try { fs.mkdirSync(GENIMG_DIR, { recursive: true }); } catch { /* ignore */ }
+  const list = [
+    ...(catalog.courses || []).map((o) => ({ o, kind: 'course' })),
+    ...(catalog.products || []).map((o) => ({ o, kind: 'product' })),
+  ];
+  let n = 0;
+  await mapLimit(list, 4, async (it) => {
+    const name = genImgName(it.o), file = path.join(GENIMG_DIR, name);
+    try {
+      if (!fs.existsSync(file)) {
+        const b64 = await generateImage(thumbPrompt(it.o, it.kind), key);
+        fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+      }
+      it.o.thumbnail = 'genimg/' + name; it.o.aiImage = true; n++;
+    } catch { /* keep existing thumbnail on failure */ }
+  });
+  return n;
+}
+
 // merge Gemini-written copy into the catalog (hero/pillars/why/reviews/products)
 function applyCopy(catalog, copy, profile) {
   const c = catalog.concept || {};
@@ -285,6 +312,8 @@ async function apiGenerate(req, res) {
         if (copy) applyCopy(catalog, copy, profile);
       } catch (e) { console.warn('[copy] gen failed:', e.message); }
     }
+    // AI thumbnails per course + product (replaces YouTube frames / brand logo)
+    if (ai.geminiApiKey) { try { await genThumbnails(catalog, ai.geminiApiKey); } catch (e) { console.warn('[img] gen failed:', e.message); } }
     const hub = await buildHub(profile, discovered, body);
     const data = writeStoreData(catalog, { hub });
     // wire the live store to this runmoa site so /store pulls live commerce.
@@ -347,6 +376,16 @@ async function apiDeploy(req, res) {
 
     const created = [], updated = [], failed = [], skipped = [];
     const img = catalog.brand.banner || catalog.brand.logo;
+    // AI thumbnails: reuse files made at generate-time (or make them now), then
+    // expose as ABSOLUTE URLs so runmoa can fetch+rehost them as featured_image.
+    // local builder (localhost) isn't reachable by runmoa → drop to brand image.
+    try { await genThumbnails(catalog, AI_CFG().geminiApiKey); } catch { /* non-fatal */ }
+    const host = req.headers.host || '';
+    const reachable = !!host && !/localhost|127\.0\.0\.1|0\.0\.0\.0/.test(host);
+    const origin = ((req.headers['x-forwarded-proto'] || 'https') + '://' + host).replace(/\/+$/, '');
+    const fixThumb = (o) => { if (o && typeof o.thumbnail === 'string' && o.thumbnail.startsWith('genimg/')) o.thumbnail = reachable ? origin + '/store/' + o.thumbnail : ''; };
+    (catalog.courses || []).forEach(fixThumb);
+    (catalog.products || []).forEach(fixThumb);
     const errText = (e) => (e.body ? (typeof e.body === 'string' ? e.body : JSON.stringify(e.body)).slice(0, 220) : e.message);
 
     // idempotency: load existing items → title→id maps, so a re-deploy UPDATES
