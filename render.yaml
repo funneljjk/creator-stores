@@ -1,0 +1,14 @@
+# Render Blueprint — always-on builder. After connecting the repo, set the two
+# secret env vars in the Render dashboard (sync:false = not stored in git).
+services:
+  - type: web
+    name: creator-builder
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SERP_API_KEY
+        sync: false

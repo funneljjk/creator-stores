@@ -141,6 +141,12 @@ window.Views = (function () {
       '<span class="fcard__src fcard__src--' + esc(it.source) + '">' + (SRC_LABEL[it.source] || '소셜') + (it.demo ? ' · 예시' : '') + '</span>' +
       '<iframe class="fcard__iframe" src="' + esc(it.embedUrl) + '" loading="lazy" style="height:' + hgt + 'px" scrolling="no" frameborder="0" allow="encrypted-media" allowtransparency="true"></iframe></div>';
   }
+  function shortsSection(d) {
+    var yt = d.hub && d.hub.youtube; var sh = (yt && yt.shorts) || [];
+    if (!sh.length) return '';
+    var more = yt && yt.url ? '<a class="sec__more" href="' + esc(yt.url) + '/shorts" target="_blank" rel="noopener">유튜브 쇼츠 ↗</a>' : '';
+    return '<section class="wrap"><div class="sec__head"><div class="sec__title" role="heading" aria-level="2">쇼츠<small>짧고 강한 한입 콘텐츠</small></div>' + more + '</div><div class="shorts">' + sh.map(shortCard).join('') + '</div></section>';
+  }
   function mixedFeedSection(d) {
     var feed = d.hub && d.hub.feed; if (!feed || !feed.length) return '';
     var batch = 9;
@@ -349,10 +355,10 @@ window.Views = (function () {
       }).join('') + '</div></div></section>';
   }
 
-  // ── HOME — dispatches to an archetype-specific layout ───
+  // ── HOME — one polished conversion layout for every channel ───
+  // (was: capital→financeLayout, which dropped the content feed/shorts and the
+  //  whyLearn/guarantee/concept sections. hubLayout is the final design.)
   function home(d) {
-    var key = d.theme && d.theme.key;
-    if (key === 'capital') return financeLayout(d);
     return hubLayout(d);
   }
 
@@ -392,6 +398,7 @@ window.Views = (function () {
     sections.push(conceptSection(d));
     sections.push(faqSection());
     sections.push(channelsSection(d));
+    sections.push(shortsSection(d));
     sections.push(mixedFeedSection(d));
     sections.push(blogSection(d));
 
