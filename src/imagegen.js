@@ -37,9 +37,9 @@ export function imgHash(s) {
   return (h >>> 0).toString(36);
 }
 
-// prompt tuned for a clean commerce thumbnail (no text/logo, on-topic).
-// REALISTIC — real-world product/lifestyle photography, NOT sci-fi/abstract.
-export function thumbPrompt(item, kind) {
+// prompt per item kind. products/coaching = realistic photo (no text).
+// COURSES = Korean e-learning thumbnail: female instructor + big title + logo.
+export function thumbPrompt(item, kind, brandName) {
   const t = item.title || '';
   if (kind === 'product') {
     return `Realistic professional commercial product photography for "${t}" (${item.category || 'product'}). A real, tangible physical product shown on a clean neutral studio background with soft natural lighting, shallow depth of field, photorealistic, high detail, like a real online-store listing photo. Absolutely NO science-fiction, NO robots, NO holograms, NO neon, NO abstract 3D — keep it grounded and real. No text, no words, no logo, no watermark. Square 1:1.`;
@@ -47,5 +47,7 @@ export function thumbPrompt(item, kind) {
   if (kind === 'coaching') {
     return `Realistic warm photograph for a coaching/class session: "${t}". Real people in a bright modern workspace or classroom, candid mentoring/learning moment, natural lighting, photorealistic, inviting. NO sci-fi, NO robots, NO abstract. No text, no logo, no watermark. 16:9.`;
   }
-  return `Clean realistic editorial thumbnail for an online course "${t}". Real-world relevant imagery (desk setup, hands working, real objects related to the topic), bright professional photography style, subtle modern accents. NOT sci-fi, NOT robots, NOT heavy abstract. No text, no words, no logo, no watermark. 16:9.`;
+  // course: classic Korean online-class cover (Class101/Inflearn style)
+  const brand = brandName ? String(brandName).slice(0, 24) : '';
+  return `Professional Korean online-course (인강) thumbnail, 16:9, marketing quality. A friendly Korean FEMALE instructor shown from the upper body (waist-up), smiling, neat professional attire, positioned on one side. On the other side, the course title in LARGE BOLD clearly-legible Korean text reading EXACTLY: "${t}" — make the title the prominent focal point. ${brand ? `Add a small clean modern logo/wordmark "${brand}" in a top corner.` : ''} Clean vibrant studio background with subtle on-topic graphic accents, bright lighting, high contrast so the title stands out. Photorealistic instructor, crisp text.`;
 }

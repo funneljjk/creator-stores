@@ -227,7 +227,7 @@ async function apiAnalyze(req, res) {
 // web/genimg (served at /store/genimg, deployed with the store), set .thumbnail.
 // deterministic filename → generate + deploy reuse the same file (no re-gen).
 const GENIMG_DIR = path.join(__dirname, 'web', 'genimg');
-const IMG_VER = 'v2'; // bump when thumbPrompt changes so cached images regenerate
+const IMG_VER = 'v3'; // bump when thumbPrompt changes so cached images regenerate
 function genImgName(item) { return 'g' + IMG_VER + '_' + imgHash((item.id || '') + '|' + (item.title || '')) + '.png'; }
 async function genThumbnails(catalog, key) {
   if (!key) return 0;
@@ -242,7 +242,10 @@ async function genThumbnails(catalog, key) {
     const name = genImgName(it.o), file = path.join(GENIMG_DIR, name);
     try {
       if (!fs.existsSync(file)) {
-        const b64 = await generateImage(thumbPrompt(it.o, it.kind), key);
+        // courses render a Korean title → use the model that draws text well;
+        // products/coaching are text-free photos → the faster flash model.
+        const model = it.kind === 'course' ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+        const b64 = await generateImage(thumbPrompt(it.o, it.kind, catalog.brand && catalog.brand.name), key, model);
         fs.writeFileSync(file, Buffer.from(b64, 'base64'));
       }
       it.o.thumbnail = 'genimg/' + name; it.o.aiImage = true; n++;
