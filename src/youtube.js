@@ -10,8 +10,15 @@ export function normalizeChannelUrl(input) {
   let s = String(input || '').trim();
   if (!s) throw new Error('No channel URL/handle provided');
   if (/^https?:\/\//i.test(s)) {
-    // strip a trailing tab (/videos, /shorts, /featured, /about ...)
-    return s.replace(/\/(videos|shorts|streams|featured|about|community|playlists)\/?$/i, '');
+    // strip trailing slash(es) FIRST, then a trailing tab (/videos, /shorts …),
+    // then any leftover slash. A stray trailing slash makes fetchTab build
+    // `…//videos`, and yt-dlp treats that double-slash as the channel ROOT →
+    // returns the Videos/Live/Shorts TAB list (channel-id pseudo-entries)
+    // instead of real videos, which then leak into the feed as broken cards.
+    return s
+      .replace(/\/+$/, '')
+      .replace(/\/(videos|shorts|streams|featured|about|community|playlists)$/i, '')
+      .replace(/\/+$/, '');
   }
   if (s.startsWith('@')) return `https://www.youtube.com/${s}`;
   if (/^UC[A-Za-z0-9_-]{22}$/.test(s)) return `https://www.youtube.com/channel/${s}`;
@@ -39,9 +46,16 @@ async function fetchChannelMeta(baseUrl) {
   };
 }
 
+// A YouTube video id is exactly 11 url-safe chars. Channel ids are 24 chars
+// starting with `UC`. Filtering entries by this drops the channel-tab pseudo-
+// entries (Videos/Live/Shorts, whose id === the channel id) that yt-dlp returns
+// when a channel ROOT is extracted — the source of the broken feed/short cards.
+export const isVideoId = (id) => /^[A-Za-z0-9_-]{11}$/.test(String(id || ''));
+
 function mapVideoEntry(e) {
   if (!e) return null;
   const id = e.id;
+  if (!isVideoId(id)) return null; // reject channel-tab / playlist pseudo-entries
   // sddefault (640×480, always exists) — sharper than hqdefault(480) in the feed
   // cards without the 5-10× over-fetch of maxres(1280). Good sharpness/load balance.
   const thumb =
@@ -63,13 +77,14 @@ function mapVideoEntry(e) {
 }
 
 async function fetchTab(baseUrl, tab, { limit, flat }) {
+  const base = String(baseUrl).replace(/\/+$/, ''); // no trailing slash → no `//tab`
   const args = ['-J', '--no-warnings', '--playlist-end', String(limit)];
   if (flat) args.push('--flat-playlist');
-  args.push(`${baseUrl}/${tab}`);
+  args.push(`${base}/${tab}`);
   try {
     const d = await ytdlpJSON(args, { timeoutMs: 180000 });
     const entries = (d.entries || []).filter(Boolean);
-    return entries.map(mapVideoEntry).filter((v) => v && v.id);
+    return entries.map(mapVideoEntry).filter((v) => v && isVideoId(v.id));
   } catch (e) {
     log.warn(`'${tab}' tab unavailable: ${e.message.split('\n')[0]}`);
     return [];

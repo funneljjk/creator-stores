@@ -78,12 +78,28 @@ function AI_CFG() {
   return { geminiApiKey: process.env.GEMINI_API_KEY || c.geminiApiKey || null, model: process.env.GEMINI_MODEL || c.model || 'gemini-3.1-pro-preview' };
 }
 
-// a GitHub-Pages-safe repo slug from a youtube url (@handle / channel id)
-function slugFromUrl(url) {
-  let s = (String(url || '').match(/@([A-Za-z0-9_.\-]+)/) || [])[1]
-    || (String(url || '').match(/channel\/(UC[A-Za-z0-9_\-]+)/) || [])[1] || 'store';
-  s = s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
-  return s || 'store';
+// a GitHub-Pages-safe, PERMANENT, UNIQUE repo slug for a creator store.
+// Each store lives at funneljjk.github.io/<slug>/ in its own repo, so the slug
+// MUST differ per creator. Priority: explicit body.slug → ascii @handle →
+// ascii channel NAME words → channel id → 'store'.
+// Why not just the @handle: a Korean handle (@골프레슨장인) sanitises to '' and
+// used to fall back to the shared literal 'store' → EVERY Korean creator
+// clobbered the same repo. The channel id is always unique + permanent, so it
+// is the last real fallback before the 'store' sentinel.
+function sluggify(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
+}
+function storeSlug(profile, body) {
+  const ch = (profile && profile.channel) || {};
+  const cands = [
+    body && body.slug,                                                   // explicit override
+    (String((body && body.url) || '').match(/@([A-Za-z0-9_.\-]+)/) || [])[1], // ascii @handle
+    ch.handle && String(ch.handle).replace(/^@/, ''),                    // handle from meta
+    ch.name,                     // e.g. "Private Golf Performance Lab [골프…]" → private-golf-performance-lab
+    ch.channelId,                // UCXyeuG8z2Xl84tpM0q1eJUA → ucxyeug8… (always unique + permanent)
+  ];
+  for (const c of cands) { const s = sluggify(c); if (s) return s; }
+  return 'store';
 }
 // publish the static web/ to a per-creator GitHub Pages repo via deploy.sh.
 // Returns { ok, url }. Best-effort — needs `gh` authed locally (skipped online).
@@ -332,7 +348,7 @@ async function apiGenerate(req, res) {
     // auto-publish to a permanent per-creator GitHub Pages URL (from the YT handle)
     let publish = null;
     if (body.publish !== false) {
-      try { publish = await publishStore(slugFromUrl(body.url)); } catch (e) { publish = { ok: false, error: e.message }; }
+      try { publish = await publishStore(storeSlug(profile, body)); } catch (e) { publish = { ok: false, error: e.message }; }
     }
     send(res, 200, {
       ok: true, storeUrl: '/store/', liveWired,
