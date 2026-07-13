@@ -91,15 +91,27 @@ function sluggify(s) {
 }
 function storeSlug(profile, body) {
   const ch = (profile && profile.channel) || {};
+  // explicit override wins verbatim (the user chose it)
+  const explicit = sluggify(body && body.slug);
+  if (explicit) return explicit;
   const cands = [
-    body && body.slug,                                                   // explicit override
     (String((body && body.url) || '').match(/@([A-Za-z0-9_.\-]+)/) || [])[1], // ascii @handle
     ch.handle && String(ch.handle).replace(/^@/, ''),                    // handle from meta
     ch.name,                     // e.g. "Private Golf Performance Lab [골프…]" → private-golf-performance-lab
     ch.channelId,                // UCXyeuG8z2Xl84tpM0q1eJUA → ucxyeug8… (always unique + permanent)
   ];
-  for (const c of cands) { const s = sluggify(c); if (s) return s; }
-  return 'store';
+  // a mostly-Korean name can shed to a stub like "tv" ("뚜사심심리학TV" → "tv"):
+  // too short/generic to own a repo — every "OO TV" channel would collide.
+  // De-genericize with a channel-id tail so it stays readable AND unique.
+  const GENERIC = new Set(['tv', 'store', 'shorts', 'channel', 'official', 'youtube', 'video', 'videos', 'live', 'vlog', 'daily']);
+  const tail = sluggify(ch.channelId).replace(/^uc/, '').slice(0, 6);
+  for (const c of cands) {
+    let s = sluggify(c);
+    if (!s) continue;
+    if (s.length < 4 || GENERIC.has(s)) s = tail ? `${s}-${tail}` : s;
+    if (s.length >= 4) return s;
+  }
+  return sluggify(ch.channelId) || 'store';
 }
 // publish the static web/ to a per-creator GitHub Pages repo via deploy.sh.
 // Returns { ok, url }. Best-effort — needs `gh` authed locally (skipped online).
