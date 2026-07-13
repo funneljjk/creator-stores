@@ -103,16 +103,21 @@ function buildMembership(brand, mult) {
 function buildCoaching(brand, topics, mult) {
   const t = (topics && topics[0]) || brand.name;
   const p = (n) => Math.round((n * mult) / 1000) * 1000 - 100;
+  // fallback mix mirrors the Gemini path: 2 offline sessions + 2 live classes
+  // (runmoa content_type offline/live — mapper picks by the `live` flag).
   return [
-    { id: 'co_1', kind: 'coaching', title: `${t} 1:1 맞춤 코칭 (60분)`, mode: '1:1 온라인', seats: 1,
+    { id: 'co_1', kind: 'coaching', live: false, title: `${t} 1:1 맞춤 코칭 (60분)`, mode: '1:1 오프라인', seats: 1,
       schedule: '매주 화·목 저녁', price: { base: Math.max(29900, p(120000)), sale: null, onSale: false, free: false },
-      cover: 0, icon: '🎯', description: '화상으로 진행하는 1:1 맞춤 코칭 세션입니다. 신청 후 일정을 조율합니다.' },
-    { id: 'co_2', kind: 'coaching', title: `${t} 그룹 클래스 (90분)`, mode: '소규모 그룹', seats: 8,
-      schedule: '격주 토요일 오전', price: { base: Math.max(19900, p(45000)), sale: Math.max(14900, p(33000)), onSale: true, free: false },
-      cover: 4, icon: '👥', description: '최대 8명 소규모 그룹으로 진행하는 실습 중심 클래스입니다.' },
-    { id: 'co_3', kind: 'coaching', title: `오프라인 워크숍 · ${t}`, mode: '오프라인', seats: 20,
+      cover: 0, icon: '🎯', description: '직접 만나 진행하는 1:1 맞춤 코칭 세션입니다. 신청 후 일정을 조율합니다.' },
+    { id: 'co_2', kind: 'coaching', live: false, title: `오프라인 워크숍 · ${t}`, mode: '오프라인 워크숍', seats: 20,
       schedule: '월 1회 · 서울', price: { base: Math.max(39900, p(90000)), sale: null, onSale: false, free: false },
       cover: 3, icon: '🏫', description: '현장에서 직접 만나는 하루 집중 워크숍입니다. 장소는 결제 후 안내됩니다.' },
+    { id: 'lv_1', kind: 'coaching', live: true, title: `${t} 라이브 클래스 (90분)`, mode: '라이브 스트리밍', seats: 30,
+      schedule: '격주 수요일 저녁 8시', price: { base: Math.max(19900, p(45000)), sale: Math.max(14900, p(33000)), onSale: true, free: false },
+      cover: 4, icon: '🔴', description: '실시간 라이브로 진행하고 Q&A로 마무리하는 클래스입니다.' },
+    { id: 'lv_2', kind: 'coaching', live: true, title: `${t} 라이브 Q&A 세션`, mode: '라이브 스트리밍', seats: 50,
+      schedule: '월 1회 일요일 저녁', price: { base: Math.max(9900, p(25000)), sale: null, onSale: false, free: false },
+      cover: 1, icon: '🔴', description: '궁금한 것을 실시간으로 묻고 답하는 라이브 Q&A입니다.' },
   ];
 }
 

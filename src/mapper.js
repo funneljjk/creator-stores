@@ -171,14 +171,24 @@ export function courseToContentPayload(course, { categoryIds, featuredImage, sta
   };
 }
 
-/** 코칭/클래스 → runmoa POST /contents (offline) body, with schedule/location. */
+/** next-week 14:00 local — offline/live options need a FUTURE schedule window
+ * (was hardcoded '2026-07-01', already in the past). */
+function nextSessionWindow(hours = 2) {
+  const d = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { start_at: `${day} 14:00:00`, end_at: `${day} ${pad(14 + hours)}:00:00` };
+}
+
+/** 코칭/클래스 → runmoa POST /contents body. content_type은 세션의 `live`
+ * 플래그로 분기: offline(현장) / live(실시간 스트리밍) — 둘 다 일정형 options
+ * (base_price, sale_price≤base, start_at, end_at, location_text). */
 export function coachingToContentPayload(session, { categoryIds, featuredImage, status = 'publish' } = {}) {
-  // offline option requires: base_price, sale_price(≤base_price), start_at,
-  // end_at, location_text. (earlier used price/duration_* → 422)
   const base = session.price.base;
   const sale = (session.price.sale != null && session.price.sale <= base) ? session.price.sale : base;
+  const win = nextSessionWindow(2);
   return {
-    content_type: 'offline',
+    content_type: session.live ? 'live' : 'offline',
     title: truncate(session.title, 120),
     description_html: `<div style="line-height:1.7">${escapeHtml(session.description)}</div>` +
       `<p style="color:#667">진행 방식: ${escapeHtml(session.mode)} · 정원 ${session.seats}명 · ${escapeHtml(session.schedule)}</p>`,
@@ -189,9 +199,9 @@ export function coachingToContentPayload(session, { categoryIds, featuredImage, 
       title: truncate(session.schedule || '세션 예약', 120),
       base_price: base,
       sale_price: sale,
-      start_at: '2026-07-01 14:00:00',
-      end_at: '2026-07-01 16:00:00',
-      location_text: session.mode || '온라인',
+      start_at: win.start_at,
+      end_at: win.end_at,
+      location_text: session.mode || (session.live ? '온라인 라이브' : '오프라인'),
     }],
   };
 }

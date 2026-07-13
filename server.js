@@ -345,25 +345,39 @@ function applyCopy(catalog, copy, profile) {
       };
     });
   }
-  // Gemini-designed COACHING: replace the pure-template "<topic> 1:1 맞춤 코칭"
-  // (raw english keyword like "Cae"/"Autocad" stuffed into the title).
+  // Gemini-designed COACHING + LIVE: replace the pure-template "<topic> 1:1
+  // 맞춤 코칭" (raw english keyword like "Cae"/"Autocad" stuffed into the
+  // title). Target mix on runmoa: 2 offline sessions + 2 live classes
+  // (content_type offline/live — the mapper picks by the `live` flag).
   if (Array.isArray(copy.coaching) && copy.coaching.length && Array.isArray(catalog.coaching) && catalog.coaching.length) {
-    const COACH_ICON = ['🎯', '👥', '🏫'];
-    const COACH_COVER = [0, 4, 3];
-    catalog.coaching = copy.coaching.slice(0, 3).map((g, i) => {
+    const offline = copy.coaching.slice(0, 2).map((g, i) => {
       const base = Math.max(19900, won900(Number(g.priceKRW) || 90000));
-      const onSale = i === 1; // keep the group class as the discounted offer
       return {
-        id: 'co_' + (i + 1), kind: 'coaching', aiGenerated: true,
+        id: 'co_' + (i + 1), kind: 'coaching', aiGenerated: true, live: false,
         title: g.title || `코칭 세션 ${i + 1}`,
-        mode: ['1:1 온라인', '소규모 그룹', '오프라인'].includes(g.mode) ? g.mode : ['1:1 온라인', '소규모 그룹', '오프라인'][i] || '1:1 온라인',
-        seats: Math.max(1, Number(g.seats) || [1, 8, 20][i] || 1),
-        schedule: g.schedule || ['매주 화·목 저녁', '격주 토요일 오전', '월 1회 · 서울'][i] || '신청 후 일정 조율',
-        price: { base, sale: onSale ? won900(base * 0.75) : null, onSale, free: false },
-        cover: COACH_COVER[i] ?? i, icon: COACH_ICON[i] || '🎯',
+        mode: ['1:1 오프라인', '오프라인 워크숍'].includes(g.mode) ? g.mode : ['1:1 오프라인', '오프라인 워크숍'][i],
+        seats: Math.max(1, Number(g.seats) || [1, 20][i] || 1),
+        schedule: g.schedule || ['매주 화·목 저녁', '월 1회 · 서울'][i] || '신청 후 일정 조율',
+        price: { base, sale: null, onSale: false, free: false },
+        cover: [0, 3][i] ?? i, icon: ['🎯', '🏫'][i] || '🎯',
         description: g.desc || '신청 후 일정을 조율해 진행하는 세션입니다.',
       };
     });
+    const lives = (Array.isArray(copy.lives) ? copy.lives : []).slice(0, 2).map((g, i) => {
+      const base = Math.max(9900, won900(Number(g.priceKRW) || 39000));
+      const onSale = i === 0; // lead live class carries the discount hook
+      return {
+        id: 'lv_' + (i + 1), kind: 'coaching', aiGenerated: true, live: true,
+        title: g.title || `라이브 클래스 ${i + 1}`,
+        mode: '라이브 스트리밍',
+        seats: Math.max(1, Number(g.seats) || 30),
+        schedule: g.schedule || '격주 수요일 저녁 8시',
+        price: { base, sale: onSale ? won900(base * 0.75) : null, onSale, free: false },
+        cover: [4, 1][i] ?? i, icon: '🔴',
+        description: g.desc || '실시간 라이브로 진행하고 Q&A로 마무리하는 클래스입니다.',
+      };
+    });
+    catalog.coaching = [...offline, ...lives];
   }
   // keep derived stats/categories in sync with the replaced items
   catalog.categories = {
@@ -551,13 +565,18 @@ async function apiDeploy(req, res) {
       } catch (e) { failed.push({ kind: 'product', title, error: errText(e) }); }
     }
 
-    for (const c of catalog.courses) await upsertContent('course', c.title, courseToContentPayload(c, { categoryIds: [contentCat.id], featuredImage: img, status }));
-    for (const s of catalog.coaching) await upsertContent('coaching', s.title, coachingToContentPayload(s, { categoryIds: [contentCat.id], featuredImage: img, status }));
+    // creation order: offline → live → products → VOD LAST, so the VOD courses
+    // are the newest items and lead runmoa's newest-first listings.
+    const offlineSessions = (catalog.coaching || []).filter((s) => !s.live);
+    const liveSessions = (catalog.coaching || []).filter((s) => s.live);
+    for (const s of offlineSessions) await upsertContent('coaching', s.title, coachingToContentPayload(s, { categoryIds: [contentCat.id], featuredImage: img, status }));
+    for (const s of liveSessions) await upsertContent('live', s.title, coachingToContentPayload(s, { categoryIds: [contentCat.id], featuredImage: img, status }));
     if (productCat) {
       for (const p of catalog.products) await upsertProduct(p.title, productToProductPayload(p, { categoryId: productCat.id, featuredImage: img, status }));
     } else if (catalog.products.length) {
       skipped.push('상품: product 카테고리 없음 → 건너뜀');
     }
+    for (const c of catalog.courses) await upsertContent('course', c.title, courseToContentPayload(c, { categoryIds: [contentCat.id], featuredImage: img, status }));
     if (catalog.membership.length) skipped.push('멤버십: runmoa 대시보드에서 멤버십 상품 설정 필요 (생성 API 미제공)');
     if (catalog.community) skipped.push('커뮤니티: 대시보드에서 게시판 활성화 필요');
 
