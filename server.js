@@ -380,31 +380,48 @@ function applyCopy(catalog, copy, profile) {
   }
 }
 
+// BESPOKE per-creator copy via Gemini (hero / why-buy / reviews / products /
+// courses / coaching). SHARED by apiGenerate AND apiDeploy — deploy used to
+// skip this and push the raw keyword-templates to runmoa ("Seconds 완전 정복",
+// "위험한 브랜드 머그컵") while the store page showed Gemini items: two different
+// catalogs, and title-based checkout mapping broke. The copy is DISK-CACHED per
+// channel so generate and a later deploy produce IDENTICAL titles (Gemini at
+// temperature 0.85 would otherwise design different items each call).
+function copyCacheFile(url) { return path.join(CACHE_DIR, 'copy_' + Buffer.from(normalizeChannelUrl(url)).toString('base64url') + '.json'); }
+async function enrichCatalog(catalog, { profile, insights, rec }, url, opts = {}) {
+  const ai = AI_CFG();
+  if (!ai.geminiApiKey) return;
+  let copy = null;
+  const f = copyCacheFile(url);
+  if (!opts.fresh) { try { if (fs.existsSync(f)) copy = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { /* corrupt cache */ } }
+  if (!copy) {
+    try {
+      const report = buildReport(profile, insights, rec);
+      const ctx = {
+        name: profile.channel.name, about: profile.channel.about || profile.channel.description,
+        subs: profile.channel.subscribers, archetype: rec.archetype, archetypeLabel: rec.archetypeLabel,
+        topics: insights.topics, keywords: (insights.keywords || []).map((k) => k.word),
+        coreMessage: report.basics.coreMessage, target: report.basics.target,
+        problem: report.basics.problem, expertImage: report.basics.expertImage,
+        topVideos: (report.content.topVideos || []).map((v) => v.title),
+      };
+      copy = await generateCopy(ctx, ai);
+      if (copy) { try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(f, JSON.stringify(copy)); } catch { /* non-fatal */ } }
+    } catch (e) { console.warn('[copy] gen failed:', e.message); }
+  }
+  if (copy) { try { applyCopy(catalog, copy, profile); } catch (e) { console.warn('[copy] apply failed:', e.message); } }
+}
+
 async function apiGenerate(req, res) {
   const body = await readBody(req);
   if (!body.url) return send(res, 400, { error: 'url required' });
   try {
-    const { profile, insights, rec, discovered } = await getAnalysis(body.url);
+    const { profile, insights, rec, discovered } = await getAnalysis(body.url, { fresh: body.fresh });
     const blueprint = chooseBlueprint(rec, body);
     const catalog = buildCatalog(profile, insights, blueprint);
-    // BESPOKE per-creator copy via Gemini (hero / why-buy / reviews / products)
-    const ai = AI_CFG();
-    if (ai.geminiApiKey) {
-      try {
-        const report = buildReport(profile, insights, rec);
-        const ctx = {
-          name: profile.channel.name, about: profile.channel.about || profile.channel.description,
-          subs: profile.channel.subscribers, archetype: rec.archetype, archetypeLabel: rec.archetypeLabel,
-          topics: insights.topics, keywords: (insights.keywords || []).map((k) => k.word),
-          coreMessage: report.basics.coreMessage, target: report.basics.target,
-          problem: report.basics.problem, expertImage: report.basics.expertImage,
-          topVideos: (report.content.topVideos || []).map((v) => v.title),
-        };
-        const copy = await generateCopy(ctx, ai);
-        if (copy) applyCopy(catalog, copy, profile);
-      } catch (e) { console.warn('[copy] gen failed:', e.message); }
-    }
+    await enrichCatalog(catalog, { profile, insights, rec }, body.url, { fresh: body.fresh });
     // AI thumbnails per course + product (replaces YouTube frames / brand logo)
+    const ai = AI_CFG();
     if (ai.geminiApiKey) { try { await genThumbnails(catalog, ai.geminiApiKey); } catch (e) { console.warn('[img] gen failed:', e.message); } }
     const hub = await buildHub(profile, discovered, body);
     const data = writeStoreData(catalog, { hub });
@@ -452,6 +469,9 @@ async function apiDeploy(req, res) {
     const { profile, insights, rec } = await getAnalysis(url);
     const blueprint = chooseBlueprint(rec, body);
     const catalog = buildCatalog(profile, insights, blueprint);
+    // same Gemini enrichment as apiGenerate — deploy must push the SAME items
+    // the store shows (cached copy → identical titles → checkout mapping works)
+    await enrichCatalog(catalog, { profile, insights, rec }, url, {});
     const client = new RunmoaClient({ siteHost, storefrontKey, serverKey });
 
     // 1) validate keys by hitting the API (the "API 확인" step)
