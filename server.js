@@ -403,7 +403,13 @@ async function enrichCatalog(catalog, { profile, insights, rec }, url, opts = {}
         topics: insights.topics, keywords: (insights.keywords || []).map((k) => k.word),
         coreMessage: report.basics.coreMessage, target: report.basics.target,
         problem: report.basics.problem, expertImage: report.basics.expertImage,
-        topVideos: (report.content.topVideos || []).map((v) => v.title),
+        // shorts-only channels (or hosts where the /videos tab extraction
+        // fails) would leave topVideos empty → weak grounding → generic copy.
+        // Fall back to shorts titles so Gemini always sees real content.
+        topVideos: [
+          ...(report.content.topVideos || []).map((v) => v.title),
+          ...((profile.shorts || []).map((s) => s.title)),
+        ].filter(Boolean).slice(0, 8),
       };
       copy = await generateCopy(ctx, ai);
       if (copy) { try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(f, JSON.stringify(copy)); } catch { /* non-fatal */ } }
