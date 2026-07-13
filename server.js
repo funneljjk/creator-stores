@@ -301,6 +301,71 @@ function applyCopy(catalog, copy, profile) {
       options: [], description: p.desc || '', aiGenerated: true,
     }));
   }
+  // Gemini-designed COURSES: replace the archetype-template courses (whose {t}
+  // keyword-stuffing produced off-topic titles like "일산골프 포트폴리오 만들기"
+  // or meditation classes on a CAD channel) with channel-grounded designs.
+  // Template output stays as the no-key/failure fallback.
+  const won900 = (n) => Math.max(9900, Math.round(n / 1000) * 1000 - 100);
+  if (Array.isArray(copy.courses) && copy.courses.length && Array.isArray(catalog.courses) && catalog.courses.length) {
+    const videoThumbs = (profile.videos || []).map((v) => v.thumbnail).filter(Boolean);
+    const brandName = profile.channel.name || 'Creator';
+    catalog.courses = copy.courses.slice(0, 5).map((g, i) => {
+      const level = ['입문', '중급', '심화'].includes(g.level) ? g.level : (i === 0 ? '입문' : i < 3 ? '중급' : '심화');
+      const lvDur = level === '심화' ? 18 : level === '중급' ? 14 : 10; // min/lesson
+      const curTitles = (Array.isArray(g.curriculum) ? g.curriculum : []).map((t) => String(t).trim()).filter(Boolean).slice(0, 16);
+      const lessons = curTitles.length || 8;
+      const curriculum = (curTitles.length ? curTitles : Array.from({ length: lessons }, (_, k) => `${k + 1}강`))
+        .map((t, k) => ({ t: `${k + 1}강 · ${t.replace(/^\d+\s*강\s*[·.:-]?\s*/, '')}`, d: `${lvDur - 2 + (k % 3) * 3}분` }));
+      const base = won900(Number(g.priceKRW) || 49000);
+      const onSale = i % 3 !== 0;
+      return {
+        id: 'c_' + i, kind: 'course', designed: true, aiGenerated: true,
+        title: g.title || `강의 ${i + 1}`, subtitle: `${brandName}이 직접 설계한 ${level} 과정`,
+        tagline: g.tagline || '', category: g.category || '핵심', level, lessons,
+        durationSec: lessons * lvDur * 60, icon: ['🎓', '🛠️', '📁', '🚀', '🔥'][i % 5], cover: i % 6,
+        instructor: brandName, rating: Number((4.6 + (i % 4) / 10).toFixed(1)),
+        reviews: 12 + i * 31, students: 80 + i * 217, bestseller: i === 0, isNew: i === copy.courses.length - 1,
+        price: { base, sale: onSale ? won900(base * 0.72) : null, onSale, free: false },
+        outcomes: (Array.isArray(g.outcomes) && g.outcomes.length ? g.outcomes : ['핵심 원리를 이해하고 바로 적용합니다']).slice(0, 4),
+        curriculum,
+        description: `${g.title} — ${brandName}의 전문성을 체계적인 커리큘럼으로 담은 ${level} 강의입니다.`,
+        thumbnail: videoThumbs.length ? videoThumbs[i % videoThumbs.length] : undefined,
+      };
+    });
+  }
+  // Gemini-designed COACHING: replace the pure-template "<topic> 1:1 맞춤 코칭"
+  // (raw english keyword like "Cae"/"Autocad" stuffed into the title).
+  if (Array.isArray(copy.coaching) && copy.coaching.length && Array.isArray(catalog.coaching) && catalog.coaching.length) {
+    const COACH_ICON = ['🎯', '👥', '🏫'];
+    const COACH_COVER = [0, 4, 3];
+    catalog.coaching = copy.coaching.slice(0, 3).map((g, i) => {
+      const base = Math.max(19900, won900(Number(g.priceKRW) || 90000));
+      const onSale = i === 1; // keep the group class as the discounted offer
+      return {
+        id: 'co_' + (i + 1), kind: 'coaching', aiGenerated: true,
+        title: g.title || `코칭 세션 ${i + 1}`,
+        mode: ['1:1 온라인', '소규모 그룹', '오프라인'].includes(g.mode) ? g.mode : ['1:1 온라인', '소규모 그룹', '오프라인'][i] || '1:1 온라인',
+        seats: Math.max(1, Number(g.seats) || [1, 8, 20][i] || 1),
+        schedule: g.schedule || ['매주 화·목 저녁', '격주 토요일 오전', '월 1회 · 서울'][i] || '신청 후 일정 조율',
+        price: { base, sale: onSale ? won900(base * 0.75) : null, onSale, free: false },
+        cover: COACH_COVER[i] ?? i, icon: COACH_ICON[i] || '🎯',
+        description: g.desc || '신청 후 일정을 조율해 진행하는 세션입니다.',
+      };
+    });
+  }
+  // keep derived stats/categories in sync with the replaced items
+  catalog.categories = {
+    course: [...new Set((catalog.courses || []).map((c) => c.category))],
+    product: [...new Set((catalog.products || []).map((p) => p.category))],
+  };
+  const cs = catalog.stats || (catalog.stats = {});
+  cs.courseCount = (catalog.courses || []).length;
+  cs.productCount = (catalog.products || []).length;
+  cs.coachingCount = (catalog.coaching || []).length;
+  cs.students = (catalog.courses || []).reduce((s, c) => s + (c.students || 0), 0) || cs.students;
+  if ((catalog.courses || []).length) {
+    cs.avgRating = Number(((catalog.courses).reduce((s, c) => s + (c.rating || 4.8), 0) / catalog.courses.length).toFixed(2));
+  }
 }
 
 async function apiGenerate(req, res) {
