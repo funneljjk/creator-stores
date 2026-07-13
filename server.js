@@ -61,6 +61,7 @@ function chooseBlueprint(rec, body) {
   return bp;
 }
 
+const STARTED_AT = new Date().toISOString();
 const CACHE_DIR = path.join(__dirname, '.cache');
 function cacheFile(key) { return path.join(CACHE_DIR, 'an_' + Buffer.from(key).toString('base64url') + '.json'); }
 
@@ -592,6 +593,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url === '/api/analyze') return apiAnalyze(req, res);
   if (req.method === 'POST' && url === '/api/generate') return apiGenerate(req, res);
   if (req.method === 'POST' && url === '/api/deploy') return apiDeploy(req, res);
+
+  // which build is this host running? (Render sets RENDER_GIT_COMMIT)
+  if (url === '/api/version') {
+    return send(res, 200, { commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), startedAt: STARTED_AT });
+  }
 
   // storefront config for the live store (browser-safe pub key only)
   if (url === '/api/storefront-config') {

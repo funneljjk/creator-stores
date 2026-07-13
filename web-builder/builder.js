@@ -46,7 +46,9 @@
     tick();
     var timer = setInterval(tick, 2600);
 
-    api('/api/analyze', { url: state.url }).then(function (res) {
+    // fresh:true — analyzing is an explicit user action: never serve a stale
+    // cached analysis from a previous run on this host.
+    api('/api/analyze', { url: state.url, fresh: true }).then(function (res) {
       clearInterval(timer);
       if (res.error) return renderError(res.error);
       // mark all done briefly
@@ -256,6 +258,8 @@
     }
     state.keys = { siteHost: host, storefrontKey: sf, serverKey: sv };
     var stop = genProgress();   // staged "지금 무엇을 하는지" indicator
+    // NOTE: no fresh here — reuse the analysis/copy the 분석 step just cached,
+    // so 분석→제작 stay consistent within one builder session.
     api('/api/generate', Object.assign({ url: state.url, blueprintKey: state.chosenKey, modules: state.modules, embeds: state.embeds }, state.keys))
       .then(function (res) {
         stop();
