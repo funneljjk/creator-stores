@@ -90,11 +90,18 @@ function AI_CFG() {
 function sluggify(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
 }
+// PINNED slugs: channelId → permanent slug. A store URL must NEVER move once
+// shared (fans bookmark it) — a channel RENAME would otherwise re-derive a
+// different slug and publish to a new repo, silently orphaning the old URL.
+const SLUG_PINS = {
+  UCvW2d_etvxPTx2Nu6HC0bWw: 'tv-vw2d-e', // 뚜러뻥사람심리_뚜사심심리학TV
+};
 function storeSlug(profile, body) {
   const ch = (profile && profile.channel) || {};
   // explicit override wins verbatim (the user chose it)
   const explicit = sluggify(body && body.slug);
   if (explicit) return explicit;
+  if (ch.channelId && SLUG_PINS[ch.channelId]) return SLUG_PINS[ch.channelId];
   const cands = [
     (String((body && body.url) || '').match(/@([A-Za-z0-9_.\-]+)/) || [])[1], // ascii @handle
     ch.handle && String(ch.handle).replace(/^@/, ''),                    // handle from meta
