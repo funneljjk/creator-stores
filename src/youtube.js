@@ -128,7 +128,11 @@ export async function analyzeChannel(input, opts = {}) {
   const { limitVideos = 10, limitShorts = 10, feedVideos: feedLimit = 40 } = opts;
   const LOW_MEM = !!(process.env.RENDER || process.env.LOW_MEM);
   const DEEP_CONC = LOW_MEM ? 3 : 6;
-  const DEEP_TIMEOUT = LOW_MEM ? 25000 : 60000;
+  const DEEP_TIMEOUT = LOW_MEM ? 12000 : 60000;
+  // deep full-extract is reliably bot-walled on datacenter IPs (returns nothing)
+  // yet still costs timeout×count. On low-mem probe only a couple; the flat-title
+  // fallback covers the brain when they fail.
+  const DEEP_N = LOW_MEM ? 2 : limitVideos;
   if (!(await hasBinary('yt-dlp'))) {
     throw new Error(
       "yt-dlp not found. Install it: 'brew install yt-dlp' or 'pip install yt-dlp'."
@@ -160,7 +164,7 @@ export async function analyzeChannel(input, opts = {}) {
   }
 
   // deep-extract (descriptions/stats) the recent top-N longform for the brain.
-  const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, limitVideos);
+  const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, DEEP_N);
   // low-mem/slow host: single player_client + short timeout so a slow (or
   // bot-walled) full-extract fails fast instead of a 5×60s/video pile-up.
   const deepClients = LOW_MEM ? ['default'] : undefined;
