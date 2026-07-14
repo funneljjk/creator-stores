@@ -14,6 +14,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { analyzeChannel, normalizeChannelUrl } from './src/youtube.js';
+import { ytdlpJSON } from './src/util.js';
 import { deriveInsights } from './src/analyze.js';
 import { discoverLinks, extractSocials, mergeSocials, blogRssFrom, webSearchSocials, withInferredThreads } from './src/discover.js';
 import { fetchFeed } from './src/feeds.js';
@@ -636,6 +637,21 @@ const server = http.createServer(async (req, res) => {
   // which build is this host running? (Render sets RENDER_GIT_COMMIT)
   if (url === '/api/version') {
     return send(res, 200, { commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), startedAt: STARTED_AT });
+  }
+
+  // yt-dlp diagnostic — is this host bot-walled or just slow? single flat call,
+  // reports elapsed ms + entry count + error, so we stop guessing.
+  if (url.startsWith('/api/ytprobe')) {
+    const target = new URL(req.url, 'http://x').searchParams.get('url') || 'https://www.youtube.com/@ojic_career';
+    const base = String(target).replace(/\/+$/, '');
+    const t0 = Date.now();
+    try {
+      const d = await ytdlpJSON(['-J', '--flat-playlist', '--playlist-end', '3', `${base}/videos`], { timeoutMs: 120000 });
+      const e = (d.entries || []).filter(Boolean);
+      return send(res, 200, { ok: true, ms: Date.now() - t0, entries: e.length, first: (e[0] || {}).title || null, lowMem: !!(process.env.RENDER || process.env.LOW_MEM) });
+    } catch (e) {
+      return send(res, 200, { ok: false, ms: Date.now() - t0, error: String(e.message).slice(0, 400) });
+    }
   }
 
   // storefront config for the live store (browser-safe pub key only)
