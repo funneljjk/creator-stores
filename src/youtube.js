@@ -103,10 +103,14 @@ async function mapLimit(items, limit, fn) {
   return out;
 }
 
-// full metadata for ONE video (description + view/like/comment counts)
-async function fetchOneVideo(id) {
+// full metadata for ONE video (description + view/like/comment counts).
+// `clients` limits the player_client fallback — on a slow host the default 5-way
+// fallback multiplies the per-call timeout (5 × 60s) per video, so we pass a
+// single client for deep extraction (the flat listing already proved the host
+// isn't bot-walled).
+async function fetchOneVideo(id, clients) {
   try {
-    const d = await ytdlpJSON(['-J', '--no-warnings', `https://www.youtube.com/watch?v=${id}`], { timeoutMs: 60000 });
+    const d = await ytdlpJSON(['-J', '--no-warnings', `https://www.youtube.com/watch?v=${id}`], { timeoutMs: 60000, clients });
     return mapVideoEntry(d);
   } catch (e) {
     log.warn(`video ${id} extract failed: ${e.message.split('\n')[0]}`);
@@ -169,7 +173,10 @@ export async function analyzeChannel(input, opts = {}) {
   // plenty for archetype/copy grounding.
   const deepN = LOW_MEM ? Math.min(limitVideos, 5) : limitVideos;
   const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, deepN);
-  const videos = (await mapLimit(topIds, DEEP_CONC, fetchOneVideo)).filter((v) => v && v.id);
+  // low-mem/slow host: single player_client so a slow full-extract can't fan
+  // out to a 5×60s timeout per video (the cause of the 461s analyze + 0 videos).
+  const deepClients = LOW_MEM ? ['default'] : undefined;
+  const videos = (await mapLimit(topIds, DEEP_CONC, (id) => fetchOneVideo(id, deepClients))).filter((v) => v && v.id);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
   log.ok(`channel has ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
