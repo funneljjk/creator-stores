@@ -169,7 +169,10 @@ export async function analyzeChannel(input, opts = {}) {
   }
   channel.totalVideos = videosFlat.length;
   channel.totalShorts = shortsFlat.length;
-  channel.totalsCapped = videosFlat.length >= FLAT_CAP || shortsFlat.length >= FLAT_CAP;
+  // per-tab cap flags — only the tab that actually hit the ceiling shows "N+"
+  channel.videosCapped = videosFlat.length >= FLAT_CAP;
+  channel.shortsCapped = shortsFlat.length >= FLAT_CAP;
+  channel.totalsCapped = channel.videosCapped || channel.shortsCapped;
 
   // deep extraction (full per-video yt-dlp) is the heaviest step on a 0.1-vCPU
   // host — each call ~6× slower than local. Fewer deep videos on low-mem keeps

@@ -250,10 +250,9 @@ function analysisWarnings(profile) {
 // how many items did we SAMPLE for detail vs how many the channel actually has
 function analysisCounts(profile) {
   const ch = profile.channel || {};
-  const cap = ch.totalsCapped ? '+' : ''; // hit the flat ceiling → "N+"
   return {
-    totalVideos: (ch.totalVideos ?? 0) + cap,
-    totalShorts: (ch.totalShorts ?? 0) + cap,
+    totalVideos: (ch.totalVideos ?? 0) + (ch.videosCapped ? '+' : ''), // per-tab "N+"
+    totalShorts: (ch.totalShorts ?? 0) + (ch.shortsCapped ? '+' : ''),
     analyzedVideos: (profile.videos || []).length, // deep-extracted for the brain
     feedVideos: (profile.feedVideos || []).length, // thumbnails shown in the feed
   };
