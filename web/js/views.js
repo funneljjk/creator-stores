@@ -168,9 +168,26 @@ window.Views = (function () {
       '<div class="igcard__b"><div class="igcard__h">@' + esc(ig.handle || 'instagram') + '</div><p>최신 게시물·릴스·스토리는 인스타그램에서 확인하세요.</p>' +
       '<span class="btn btn--brand btn--sm">인스타그램에서 보기 →</span></div></a></section>';
   }
+  // LIST-style blog row: thumbnail on the left only if it actually loads —
+  // onerror hides it (blog RSS thumbs, esp. Naver, often 403 on hotlink), so a
+  // failed image degrades to a clean text row instead of a broken-image card.
+  function blogRow(p) {
+    var thumb = p.thumbnail
+      ? '<img loading="lazy" src="' + esc(p.thumbnail) + '" alt="" onerror="this.remove()" style="width:76px;height:56px;object-fit:cover;border-radius:8px;flex:none;background:var(--surface)">'
+      : '';
+    return '<a class="blog-row" href="' + esc(p.link) + '" target="_blank" rel="noopener" style="display:flex;gap:14px;align-items:center;padding:14px 2px;border-bottom:1px solid var(--line);text-decoration:none">' +
+      thumb +
+      '<div style="min-width:0;flex:1">' +
+        '<div class="ccard__title" role="heading" aria-level="3" style="font-size:15px;margin:0 0 3px">' + esc(p.title) + '</div>' +
+        '<div style="color:var(--ink-3);font-size:12.5px">' + esc(p.date || '') + '</div>' +
+        (p.summary ? '<p style="color:var(--ink-2);font-size:13px;line-height:1.5;margin:5px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + esc(p.summary) + '</p>' : '') +
+      '</div>' +
+      '<span aria-hidden="true" style="color:var(--ink-3);flex:none">↗</span></a>';
+  }
   function blogSection(d) {
     var blog = d.hub && d.hub.blog; if (!blog || !(blog.posts || []).length) return '';
-    return section('✍ 블로그', (blog.label || '블로그') + ' 최신 글', infiniteGrid(blog.posts, blogCard, 6), blog.url, '블로그 ↗');
+    var rows = blog.posts.slice(0, 12).map(blogRow).join('');
+    return section('✍ 블로그', (blog.label || '블로그') + ' 최신 글', '<div class="blog-list">' + rows + '</div>', blog.url, '블로그 ↗');
   }
   // CONCEPT — the protagonist. what the creator/brand is about.
   function conceptSection(d) {
