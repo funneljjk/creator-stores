@@ -191,7 +191,7 @@ window.Views = (function () {
   function channelsSection(d) {
     var chans = [];
     var yt = d.hub && d.hub.youtube;
-    if (d.brand.youtube) { var nv = yt ? (yt.totalVideos != null ? yt.totalVideos : yt.videos.length) : 0, ns = yt ? (yt.totalShorts != null ? yt.totalShorts : yt.shorts.length) : 0; chans.push({ platform: 'youtube', label: 'YouTube', url: d.brand.youtube, desc: yt ? (nv + '개 영상 · ' + ns + '개 쇼츠') : '영상 채널' }); }
+    if (d.brand.youtube) { var ydesc = yt && (yt.videoCountText || (yt.totalCount != null && yt.totalCount + '개 동영상')) || '영상 채널'; chans.push({ platform: 'youtube', label: 'YouTube', url: d.brand.youtube, desc: ydesc }); }
     ((d.hub && d.hub.socials) || []).forEach(function (sc) {
       if (sc.platform === 'youtube') return;
       chans.push({ platform: sc.platform, label: sc.label, url: sc.url, desc: sc.handle ? '@' + sc.handle : '' });

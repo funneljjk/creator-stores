@@ -25,6 +25,25 @@ export function normalizeChannelUrl(input) {
   return `https://www.youtube.com/@${s.replace(/^@/, '')}`;
 }
 
+// Read the channel's TOTAL video count straight from YouTube's About page —
+// the "동영상 856개" the user already sees. One cheap GET (no enumeration).
+async function fetchChannelStats(baseUrl) {
+  try {
+    const res = await fetch(String(baseUrl).replace(/\/+$/, '') + '/about', {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'accept-language': 'ko,en;q=0.8',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    const html = await res.text();
+    const pick = (k) => { const m = html.match(new RegExp('"' + k + '":"([^"]+)"')); return m ? m[1] : null; };
+    const vc = pick('videoCountText'); // "동영상 856개" / "856 videos"
+    const num = vc ? Number(((vc.match(/[\d,]+/) || [''])[0]).replace(/,/g, '')) : null;
+    return { totalCount: Number.isFinite(num) ? num : null, videoCountText: vc, viewCountText: pick('viewCountText') };
+  } catch { return { totalCount: null, videoCountText: null, viewCountText: null }; }
+}
+
 async function fetchChannelMeta(baseUrl) {
   // --playlist-items 0 → channel-level metadata only, no entries (fast).
   const d = await ytdlpJSON([
@@ -146,21 +165,18 @@ export async function analyzeChannel(input, opts = {}) {
     `${color.bold(channel.name)}  ·  ${channel.subscribers ?? '?'} subscribers  ·  ${channel.channelId}`
   );
 
-  // Flat-list both tabs to their end (ids/titles only — no per-video extract) so
-  // we know the channel's TRUE scale (e.g. 76 videos + 772 shorts) while only
-  // DEEP-analyzing the recent few. Flat is memory-light, so run both in PARALLEL
-  // even on low-mem (the OOM risk was parallel DEEP extracts, not flat lists).
-  // FLAT_CAP bounds a mega-channel; totals past it show "N+".
-  const FLAT_CAP = 1500;
-  log.step(`Counting videos + shorts (flat) · deep-analyzing ${limitVideos} recent…${LOW_MEM ? ' [low-mem]' : ''}`);
-  const [videosFlat, shortsFlat] = await Promise.all([
-    fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true }),
-    fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true }),
+  // RECENT-ONLY + read the total from YouTube's About page (no enumeration):
+  // fetch just recent videos (feed) + recent shorts, and grab the "동영상 856개"
+  // total YouTube already displays — all in parallel. Fast on any host.
+  const videoFetch = Math.max(feedLimit, limitVideos);
+  log.step(`Fetching recent ${videoFetch} videos + ${limitShorts} shorts + total…${LOW_MEM ? ' [low-mem]' : ''}`);
+  const [videosFlat, shortsFlat, stats] = await Promise.all([
+    fetchTab(baseUrl, 'videos', { limit: videoFetch, flat: true }),
+    fetchTab(baseUrl, 'shorts', { limit: limitShorts, flat: true }),
+    fetchChannelStats(baseUrl),
   ]);
-  channel.totalVideos = videosFlat.length;
-  channel.totalShorts = shortsFlat.length;
-  channel.videosCapped = videosFlat.length >= FLAT_CAP;
-  channel.shortsCapped = shortsFlat.length >= FLAT_CAP;
+  channel.totalCount = stats.totalCount;           // 856 (YouTube's shown total)
+  channel.videoCountText = stats.videoCountText;   // "동영상 856개"
 
   // deep-extract (descriptions/stats) the recent top-N longform for the brain.
   const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, DEEP_N);
@@ -174,7 +190,7 @@ export async function analyzeChannel(input, opts = {}) {
   if (!videos.length && videosFlat.length) videos = videosFlat.slice(0, limitVideos);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
-  log.ok(`channel: ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
+  log.ok(`total ${channel.videoCountText || channel.totalCount || '?'} · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
 
   return {
     channel,
