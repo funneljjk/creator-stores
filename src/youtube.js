@@ -163,7 +163,12 @@ export async function analyzeChannel(input, opts = {}) {
   channel.totalShorts = shortsFlat.length;
   channel.totalsCapped = videosFlat.length >= FLAT_CAP || shortsFlat.length >= FLAT_CAP;
 
-  const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, limitVideos);
+  // deep extraction (full per-video yt-dlp) is the heaviest step on a 0.1-vCPU
+  // host — each call ~6× slower than local. Fewer deep videos on low-mem keeps
+  // the whole analysis under the request timeout; 5 real descriptions are
+  // plenty for archetype/copy grounding.
+  const deepN = LOW_MEM ? Math.min(limitVideos, 5) : limitVideos;
+  const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, deepN);
   const videos = (await mapLimit(topIds, DEEP_CONC, fetchOneVideo)).filter((v) => v && v.id);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
