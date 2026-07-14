@@ -108,9 +108,9 @@ async function mapLimit(items, limit, fn) {
 // fallback multiplies the per-call timeout (5 × 60s) per video, so we pass a
 // single client for deep extraction (the flat listing already proved the host
 // isn't bot-walled).
-async function fetchOneVideo(id, clients) {
+async function fetchOneVideo(id, clients, timeoutMs = 60000) {
   try {
-    const d = await ytdlpJSON(['-J', '--no-warnings', `https://www.youtube.com/watch?v=${id}`], { timeoutMs: 60000, clients });
+    const d = await ytdlpJSON(['-J', '--no-warnings', `https://www.youtube.com/watch?v=${id}`], { timeoutMs, clients });
     return mapVideoEntry(d);
   } catch (e) {
     log.warn(`video ${id} extract failed: ${e.message.split('\n')[0]}`);
@@ -130,8 +130,12 @@ export async function analyzeChannel(input, opts = {}) {
   // yt-dlp processes run at once. Detect and throttle: fewer parallel spawns,
   // sequential tab listing, lower flat ceiling. Local/beefy hosts stay fast.
   const LOW_MEM = !!(process.env.RENDER || process.env.LOW_MEM);
-  const FLAT_CAP = LOW_MEM ? 900 : 2000;
-  const DEEP_CONC = LOW_MEM ? 2 : 6;
+  // low-mem/0.1-vCPU (Render free): cap flat enumeration low (fewer continuation
+  // pages = faster; totals past the cap show "N+"), and keep deep-extract cheap
+  // (it's usually bot-walled on datacenter IPs anyway → 0, so don't burn time).
+  const FLAT_CAP = LOW_MEM ? 300 : 2000;
+  const DEEP_CONC = LOW_MEM ? 3 : 6;
+  const DEEP_TIMEOUT = LOW_MEM ? 25000 : 60000;
   if (!(await hasBinary('yt-dlp'))) {
     throw new Error(
       "yt-dlp not found. Install it: 'brew install yt-dlp' or 'pip install yt-dlp'."
@@ -171,12 +175,17 @@ export async function analyzeChannel(input, opts = {}) {
   // host — each call ~6× slower than local. Fewer deep videos on low-mem keeps
   // the whole analysis under the request timeout; 5 real descriptions are
   // plenty for archetype/copy grounding.
-  const deepN = LOW_MEM ? Math.min(limitVideos, 5) : limitVideos;
+  const deepN = LOW_MEM ? Math.min(limitVideos, 3) : limitVideos;
   const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, deepN);
-  // low-mem/slow host: single player_client so a slow full-extract can't fan
-  // out to a 5×60s timeout per video (the cause of the 461s analyze + 0 videos).
+  // low-mem/slow host: single player_client + short timeout so a slow (or
+  // bot-walled) full-extract fails fast instead of a 5×60s/video pile-up.
   const deepClients = LOW_MEM ? ['default'] : undefined;
-  const videos = (await mapLimit(topIds, DEEP_CONC, (id) => fetchOneVideo(id, deepClients))).filter((v) => v && v.id);
+  let videos = (await mapLimit(topIds, DEEP_CONC, (id) => fetchOneVideo(id, deepClients, DEEP_TIMEOUT))).filter((v) => v && v.id);
+  // deep extraction bot-walled (datacenter IP) → 0. Fall back to flat entries
+  // (title-only, no description/stats) so the archetype/insight brain still
+  // classifies off real video titles instead of nothing (was mislabeling the
+  // channel, e.g. career → 코칭·피트니스).
+  if (!videos.length && videosFlat.length) videos = videosFlat.slice(0, limitVideos);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
   log.ok(`channel has ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
