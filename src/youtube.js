@@ -76,9 +76,10 @@ function mapVideoEntry(e) {
   };
 }
 
-async function fetchTab(baseUrl, tab, { limit, flat }) {
+async function fetchTab(baseUrl, tab, { limit, flat } = {}) {
   const base = String(baseUrl).replace(/\/+$/, ''); // no trailing slash → no `//tab`
-  const args = ['-J', '--no-warnings', '--playlist-end', String(limit)];
+  const args = ['-J', '--no-warnings'];
+  if (limit) args.push('--playlist-end', String(limit)); // omit → list the whole tab
   if (flat) args.push('--flat-playlist');
   args.push(`${base}/${tab}`);
   try {
@@ -113,25 +114,17 @@ async function fetchOneVideo(id) {
   }
 }
 
-// Top-N videos WITH full metadata, fetched in PARALLEL. yt-dlp's own playlist
-// full-extract is sequential (~2.4s/video → 24s for 10). Flat-listing the ids
-// first (1s) then extracting each concurrently cuts this to ~5s — no data loss.
-async function fetchVideosFull(baseUrl, limit) {
-  const flat = await fetchTab(baseUrl, 'videos', { limit, flat: true });
-  const ids = flat.map((v) => v.id).filter(Boolean).slice(0, limit);
-  if (!ids.length) return [];
-  const out = await mapLimit(ids, 8, fetchOneVideo);
-  return out.filter((v) => v && v.id);
-}
-
 /**
  * Analyze a channel.
  * @param {string} input channel url / handle
- * @param {{limitVideos?:number, limitShorts?:number}} opts
- * @returns {Promise<{channel:object, videos:object[], shorts:object[], analyzedAt:string}>}
+ * @param {{limitVideos?:number, limitShorts?:number, feedVideos?:number}} opts
+ * @returns {Promise<{channel:object, videos:object[], shorts:object[], feedVideos:object[], analyzedAt:string}>}
  */
 export async function analyzeChannel(input, opts = {}) {
-  const { limitVideos = 10, limitShorts = 12 } = opts;
+  const { limitVideos = 10, limitShorts = 12, feedVideos: feedLimit = 60 } = opts;
+  // safety ceiling on the flat listing so a mega-channel (10k+ shorts) can't
+  // hang the analysis; totals past this are reported as "N+" by the caller.
+  const FLAT_CAP = 2000;
   if (!(await hasBinary('yt-dlp'))) {
     throw new Error(
       "yt-dlp not found. Install it: 'brew install yt-dlp' or 'pip install yt-dlp'."
@@ -145,19 +138,26 @@ export async function analyzeChannel(input, opts = {}) {
     `${color.bold(channel.name)}  ·  ${channel.subscribers ?? '?'} subscribers  ·  ${channel.channelId}`
   );
 
-  // Videos need full extraction (descriptions) for analysis; shorts + the long
-  // feed use flat extraction (fast → many items for a continuous feed).
-  // Feed = flat thumbnails (fast, many). But archetype classification needs a
-  // few real descriptions, so we still full-extract the top N IN PARALLEL (for
-  // the brain only — the feed itself never shows likes/comments/description).
-  const { feedVideos: feedLimit = 60 } = opts;
-  log.step(`Fetching ${limitVideos} videos (analysis) + ${limitShorts} shorts + ${feedLimit} feed thumbnails…`);
-  const [videos, shorts, feedVideos] = await Promise.all([
-    fetchVideosFull(baseUrl, limitVideos),
-    fetchTab(baseUrl, 'shorts', { limit: limitShorts, flat: true }),
-    fetchTab(baseUrl, 'videos', { limit: feedLimit, flat: true }),
+  // Flat-list the FULL videos + shorts tabs (cheap — ids/titles only, ~1s per
+  // ~100 items) so we know the channel's TRUE scale (e.g. 76 longform + 772
+  // shorts), NOT just how many we sampled. Reporting "10 videos" for an
+  // 848-video channel was the bug. Deep metadata (descriptions/stats) is then
+  // extracted only for the recent top-N longform — the archetype brain needs a
+  // few real descriptions; the feed only needs thumbnails.
+  log.step(`Listing all videos + shorts (flat) · deep-extracting ${limitVideos} recent…`);
+  const [videosFlat, shortsFlat] = await Promise.all([
+    fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true }),
+    fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true }),
   ]);
-  log.ok(`${videos.length} analysis videos, ${shorts.length} shorts, ${feedVideos.length} feed thumbnails`);
+  channel.totalVideos = videosFlat.length;
+  channel.totalShorts = shortsFlat.length;
+  channel.totalsCapped = videosFlat.length >= FLAT_CAP || shortsFlat.length >= FLAT_CAP;
+
+  const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, limitVideos);
+  const videos = (await mapLimit(topIds, 6, fetchOneVideo)).filter((v) => v && v.id);
+  const shorts = shortsFlat.slice(0, limitShorts);
+  const feedVideos = videosFlat.slice(0, feedLimit);
+  log.ok(`channel has ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
 
   return {
     channel,
