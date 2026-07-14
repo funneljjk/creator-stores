@@ -177,6 +177,7 @@
       '<img class="result__av" src="' + esc(a.brand.logo || '') + '" alt="">' +
       '<div style="flex:1"><div class="result__name">' + esc(a.brand.name) + '</div>' +
         '<div class="result__meta">구독자 ' + count(a.brand.subscribers) + '명 · 영상 ' + (a.counts.totalVideos != null ? a.counts.totalVideos : (a.counts.videos || 0)) + ' · 쇼츠 ' + (a.counts.totalShorts != null ? a.counts.totalShorts : (a.counts.shorts || 0)) + ' · 추정 유형 <b>' + esc(a.archetypeLabel) + '</b></div>' +
+        '<div class="result__sub" style="color:#94a3b8;font-size:12px;margin-top:2px">최근 ' + (a.counts.analyzedVideos != null ? a.counts.analyzedVideos : 10) + '개 영상 상세 분석</div>' +
         '<div class="result__chips">' + (a.brand.topics || []).filter(function (t) { return ['playlist', 'music', 'video', 'videos', 'channel', 'audio', 'live'].indexOf(String(t).toLowerCase()) < 0; }).slice(0, 6).map(function (t) { return '<span class="tchip">#' + esc(t) + '</span>'; }).join('') + '</div>' +
         foundChannels(a) +
       '</div></div>';

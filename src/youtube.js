@@ -146,22 +146,21 @@ export async function analyzeChannel(input, opts = {}) {
     `${color.bold(channel.name)}  ·  ${channel.subscribers ?? '?'} subscribers  ·  ${channel.channelId}`
   );
 
-  // RECENT-ONLY: flat-list just the most recent videos (for the feed) + recent
-  // shorts — NO full-tab enumeration. Enumerating every short (hundreds → dozens
-  // of continuation pages) was the analyze bottleneck; the store only needs
-  // recent content + a few deep descriptions for the archetype/copy brain.
-  const videoFetch = Math.max(feedLimit, limitVideos);
-  log.step(`Fetching recent ${videoFetch} videos + ${limitShorts} shorts…${LOW_MEM ? ' [low-mem]' : ''}`);
-  let videosFlat, shortsFlat;
-  if (LOW_MEM) {
-    videosFlat = await fetchTab(baseUrl, 'videos', { limit: videoFetch, flat: true });
-    shortsFlat = await fetchTab(baseUrl, 'shorts', { limit: limitShorts, flat: true });
-  } else {
-    [videosFlat, shortsFlat] = await Promise.all([
-      fetchTab(baseUrl, 'videos', { limit: videoFetch, flat: true }),
-      fetchTab(baseUrl, 'shorts', { limit: limitShorts, flat: true }),
-    ]);
-  }
+  // Flat-list both tabs to their end (ids/titles only — no per-video extract) so
+  // we know the channel's TRUE scale (e.g. 76 videos + 772 shorts) while only
+  // DEEP-analyzing the recent few. Flat is memory-light, so run both in PARALLEL
+  // even on low-mem (the OOM risk was parallel DEEP extracts, not flat lists).
+  // FLAT_CAP bounds a mega-channel; totals past it show "N+".
+  const FLAT_CAP = 1500;
+  log.step(`Counting videos + shorts (flat) · deep-analyzing ${limitVideos} recent…${LOW_MEM ? ' [low-mem]' : ''}`);
+  const [videosFlat, shortsFlat] = await Promise.all([
+    fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true }),
+    fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true }),
+  ]);
+  channel.totalVideos = videosFlat.length;
+  channel.totalShorts = shortsFlat.length;
+  channel.videosCapped = videosFlat.length >= FLAT_CAP;
+  channel.shortsCapped = shortsFlat.length >= FLAT_CAP;
 
   // deep-extract (descriptions/stats) the recent top-N longform for the brain.
   const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, DEEP_N);
@@ -175,7 +174,7 @@ export async function analyzeChannel(input, opts = {}) {
   if (!videos.length && videosFlat.length) videos = videosFlat.slice(0, limitVideos);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
-  log.ok(`analyzed ${videos.length} videos + ${shorts.length} shorts · feed ${feedVideos.length}`);
+  log.ok(`channel: ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
 
   return {
     channel,

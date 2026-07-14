@@ -186,6 +186,10 @@ async function buildHub(profile, discovered, body) {
   const instagram = socials.find((s) => s.platform === 'instagram') || (body && body.instagramUrl ? { platform: 'instagram', label: 'Instagram', url: body.instagramUrl, handle: (body.instagramUrl.match(/instagram\.com\/([^/?]+)/) || [])[1] } : null);
   const youtube = {
     url: profile.channel.url,
+    // TRUE channel scale so the store shows "76개 영상 · 772개 쇼츠" (not the
+    // analyzed subset). videos/shorts arrays remain the displayed recent subset.
+    totalVideos: profile.channel.totalVideos ?? (profile.videos || []).length,
+    totalShorts: profile.channel.totalShorts ?? (profile.shorts || []).length,
     videos: (profile.videos || []).map((v) => ({ id: v.id, title: v.title, thumbnail: v.thumbnail, url: v.url, views: v.views, duration: v.duration })),
     shorts: (profile.shorts || []).map((v) => ({ id: v.id, title: v.title, thumbnail: v.thumbnail, url: v.url })),
   };
@@ -233,21 +237,22 @@ function writeStoreData(catalog, extra) {
 // letting it look like an empty channel — the "영상 0개" the user hit on Render.
 function analysisWarnings(profile) {
   const w = [];
-  const v = (profile.videos || []).length;
-  const s = (profile.shorts || []).length;
-  const f = (profile.feedVideos || []).length;
-  if (v === 0 && s === 0 && f === 0) {
+  const ch = profile.channel || {};
+  if ((ch.totalVideos ?? 0) === 0 && (ch.totalShorts ?? 0) === 0) {
     w.push('영상·숏폼 추출 0건 — YouTube가 이 서버 IP를 봇으로 차단했을 가능성이 큽니다. 서버 루트에 .yt-cookies.txt(Netscape 쿠키)를 넣으면 해결됩니다.');
   }
   return w;
 }
 
-// recent items analyzed (we no longer enumerate the whole channel)
+// TRUE channel scale (whole tab) + how many we deep-analyzed.
 function analysisCounts(profile) {
+  const ch = profile.channel || {};
   return {
-    videos: (profile.videos || []).length,       // recent longform analyzed
-    shorts: (profile.shorts || []).length,       // recent shorts
-    feed: (profile.feedVideos || []).length,     // feed thumbnails
+    totalVideos: (ch.totalVideos ?? 0) + (ch.videosCapped ? '+' : ''), // 채널 총 영상
+    totalShorts: (ch.totalShorts ?? 0) + (ch.shortsCapped ? '+' : ''), // 채널 총 숏폼
+    analyzedVideos: (profile.videos || []).length,   // 상세 분석한 최근 영상
+    shorts: (profile.shorts || []).length,           // 표시용 최근 숏폼
+    feed: (profile.feedVideos || []).length,
   };
 }
 
