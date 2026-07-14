@@ -122,9 +122,12 @@ async function fetchOneVideo(id) {
  */
 export async function analyzeChannel(input, opts = {}) {
   const { limitVideos = 10, limitShorts = 12, feedVideos: feedLimit = 60 } = opts;
-  // safety ceiling on the flat listing so a mega-channel (10k+ shorts) can't
-  // hang the analysis; totals past this are reported as "N+" by the caller.
-  const FLAT_CAP = 2000;
+  // Constrained hosts (Render free tier = 512MB) OOM (→502) when several
+  // yt-dlp processes run at once. Detect and throttle: fewer parallel spawns,
+  // sequential tab listing, lower flat ceiling. Local/beefy hosts stay fast.
+  const LOW_MEM = !!(process.env.RENDER || process.env.LOW_MEM);
+  const FLAT_CAP = LOW_MEM ? 900 : 2000;
+  const DEEP_CONC = LOW_MEM ? 2 : 6;
   if (!(await hasBinary('yt-dlp'))) {
     throw new Error(
       "yt-dlp not found. Install it: 'brew install yt-dlp' or 'pip install yt-dlp'."
@@ -144,17 +147,24 @@ export async function analyzeChannel(input, opts = {}) {
   // 848-video channel was the bug. Deep metadata (descriptions/stats) is then
   // extracted only for the recent top-N longform — the archetype brain needs a
   // few real descriptions; the feed only needs thumbnails.
-  log.step(`Listing all videos + shorts (flat) · deep-extracting ${limitVideos} recent…`);
-  const [videosFlat, shortsFlat] = await Promise.all([
-    fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true }),
-    fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true }),
-  ]);
+  log.step(`Listing all videos + shorts (flat) · deep-extracting ${limitVideos} recent…${LOW_MEM ? ' [low-mem]' : ''}`);
+  // low-mem: list tabs sequentially (1 yt-dlp at a time); otherwise in parallel.
+  let videosFlat, shortsFlat;
+  if (LOW_MEM) {
+    videosFlat = await fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true });
+    shortsFlat = await fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true });
+  } else {
+    [videosFlat, shortsFlat] = await Promise.all([
+      fetchTab(baseUrl, 'videos', { limit: FLAT_CAP, flat: true }),
+      fetchTab(baseUrl, 'shorts', { limit: FLAT_CAP, flat: true }),
+    ]);
+  }
   channel.totalVideos = videosFlat.length;
   channel.totalShorts = shortsFlat.length;
   channel.totalsCapped = videosFlat.length >= FLAT_CAP || shortsFlat.length >= FLAT_CAP;
 
   const topIds = videosFlat.map((v) => v.id).filter(Boolean).slice(0, limitVideos);
-  const videos = (await mapLimit(topIds, 6, fetchOneVideo)).filter((v) => v && v.id);
+  const videos = (await mapLimit(topIds, DEEP_CONC, fetchOneVideo)).filter((v) => v && v.id);
   const shorts = shortsFlat.slice(0, limitShorts);
   const feedVideos = videosFlat.slice(0, feedLimit);
   log.ok(`channel has ${channel.totalVideos} videos + ${channel.totalShorts} shorts · deep-analyzed ${videos.length}, feed ${feedVideos.length}`);
