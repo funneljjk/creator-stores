@@ -228,6 +228,21 @@ function writeStoreData(catalog, extra) {
 }
 
 // ── API handlers ──────────────────────────────────────────────────────
+// Surface a bot-wall (yt-dlp returning 0 items on a datacenter IP) instead of
+// letting it look like an empty channel — the "영상 0개" the user hit on Render.
+function analysisWarnings(profile) {
+  const w = [];
+  const v = (profile.videos || []).length;
+  const s = (profile.shorts || []).length;
+  const f = (profile.feedVideos || []).length;
+  if (v === 0 && s === 0 && f === 0) {
+    w.push('영상·숏폼 추출 0건 — YouTube가 이 서버 IP를 봇으로 차단했을 가능성이 큽니다. 서버 루트에 .yt-cookies.txt(Netscape 쿠키)를 넣으면 해결됩니다.');
+  } else if (v === 0 && f === 0) {
+    w.push(`일반 영상 추출 0건 (숏폼 ${s}건은 정상). 영상 탭 봇차단이 의심됩니다.`);
+  }
+  return w;
+}
+
 async function apiAnalyze(req, res) {
   const body = await readBody(req);
   if (!body.url) return send(res, 400, { error: 'url required' });
@@ -245,7 +260,8 @@ async function apiAnalyze(req, res) {
         banner: profile.channel.banner, subscribers: profile.channel.subscribers, youtube: profile.channel.url,
         topics: insights.topics,
       },
-      counts: { videos: profile.videos.length, shorts: profile.shorts.length },
+      counts: { videos: profile.videos.length, shorts: profile.shorts.length, feed: (profile.feedVideos || []).length },
+      warnings: analysisWarnings(profile),
       discovered: { socials: allSocials, blog: foundBlog },
       signals: rec.signals,
       archetype: rec.archetype, archetypeLabel: rec.archetypeLabel,
@@ -482,6 +498,7 @@ async function apiGenerate(req, res) {
         socials: hub.socials.length, blogPosts: hub.blog ? hub.blog.posts.length : 0,
         videos: hub.youtube.videos.length, shorts: hub.youtube.shorts.length,
       },
+      warnings: analysisWarnings(profile),
       generatedAt: data.generatedAt,
     });
   } catch (e) {

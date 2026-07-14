@@ -1,5 +1,10 @@
 // Small dependency-free helpers shared across the pipeline.
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** ANSI colors (no dep). Disabled when not a TTY. */
 const useColor = process.stdout.isTTY;
@@ -49,10 +54,43 @@ export function run(cmd, args = [], { timeoutMs = 120000 } = {}) {
   });
 }
 
-/** Run yt-dlp with args and JSON-parse the single-line output. */
-export async function ytdlpJSON(args, opts) {
-  const raw = await run('yt-dlp', args, opts);
-  return JSON.parse(raw);
+// A real desktop browser UA — a bare yt-dlp UA gets bot-walled faster.
+const YT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+// player_client fallback order. Datacenter IPs (Render) get "Sign in to confirm
+// you're not a bot" on the default web client; ios/tv_embedded/android often
+// still resolve. Local (residential IP) succeeds on the first try, so this
+// costs nothing there and only kicks in when the primary client is walled.
+const YT_CLIENTS = ['default', 'ios', 'tv_embedded', 'android', 'mweb'];
+
+// optional cookies — the surest bot-wall bypass on a datacenter IP. Netscape
+// cookies.txt at $YT_COOKIES_FILE or repo-root .yt-cookies.txt (gitignored).
+function ytCookieArgs() {
+  const f = process.env.YT_COOKIES_FILE || path.join(__dirname, '..', '.yt-cookies.txt');
+  try { if (fs.existsSync(f)) return ['--cookies', f]; } catch { /* ignore */ }
+  return [];
+}
+
+/** Run yt-dlp with args and JSON-parse the output. Injects bot-resilience
+ * flags (UA, retries, socket-timeout, optional cookies) and falls back across
+ * player_clients if the primary one is bot-walled (throws). */
+export async function ytdlpJSON(args, opts = {}) {
+  const stable = [
+    '--retries', '3', '--extractor-retries', '2', '--socket-timeout', '30',
+    '--user-agent', YT_UA, ...ytCookieArgs(),
+  ];
+  const clients = opts.clients || YT_CLIENTS;
+  let lastErr;
+  for (const client of clients) {
+    const clientArg = client === 'default' ? [] : ['--extractor-args', `youtube:player_client=${client}`];
+    try {
+      const raw = await run('yt-dlp', [...args, ...stable, ...clientArg], opts);
+      return JSON.parse(raw);
+    } catch (e) {
+      lastErr = e;
+      log.warn(`yt-dlp client '${client}' failed: ${String(e.message).split('\n')[0].slice(0, 100)}`);
+    }
+  }
+  throw lastErr;
 }
 
 /** Is a binary available on PATH? */

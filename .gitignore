@@ -17,3 +17,4 @@ openapi.yaml
 .deploy/
 scratchpad/
 web/genimg/
+.yt-cookies.txt
