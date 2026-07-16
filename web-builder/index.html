@@ -46,8 +46,21 @@
               <textarea id="embeds" rows="3" placeholder="https://www.instagram.com/p/XXXX/&#10;https://x.com/user/status/123456&#10;https://www.tiktok.com/@user/video/123456" style="width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
               <p class="keys__note">붙여넣은 게시물이 자동 발견 채널과 함께 한 피드에 섞여 노출됩니다. (공개 게시물만)</p>
             </div>
-            <div class="samples">예시로 체험: <a href="#" data-sample="@mkbhd">@mkbhd</a> · <a href="#" data-sample="@jangproai">@jangproai</a></div>
+            <div class="samples">예시로 체험: <a href="#" data-sample="@mkbhd">@mkbhd</a> · <a href="#" data-sample="@jangproai">@jangproai</a>
+              &nbsp;·&nbsp; <a href="#" id="bulkOpen"><b>⚡ 대량 생성 (여러 채널 한 번에)</b></a></div>
           </form>
+
+          <!-- ── BULK: paste 40-50 channel links → analyze → per-channel keys → generate all ── -->
+          <div class="keys" id="bulkBox" hidden>
+            <label style="font-size:13px;font-weight:800;display:block;margin-bottom:6px">⚡ 대량 생성 — 유튜브 링크를 한 줄에 하나씩 (최대 50개)</label>
+            <textarea id="bulkUrls" rows="6" placeholder="https://www.youtube.com/@channel1&#10;@channel2&#10;https://www.youtube.com/channel/UCxxxx" style="width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <button type="button" class="btn btn--accent" id="bulkStart">전체 분석 시작</button>
+              <button type="button" class="btn btn--ghost" id="bulkCancel" hidden>중단</button>
+              <span id="bulkNote" style="font-size:12px;color:var(--ink-2s)">순차 처리 — 서버 부하 없이 1개씩. 분석 결과는 서버에 저장만 됩니다.</span>
+            </div>
+            <div id="bulkTable" style="margin-top:14px"></div>
+          </div>
 
           <div class="hero2__trust">
             <div><span class="tick">✓</span> <b>노코드</b> · 코딩 0줄</div>

@@ -623,12 +623,127 @@ async function apiDeploy(req, res) {
   }
 }
 
+// ── BULK: analyze → per-creator keys → generate, 40-50 channels ────────
+// SEQUENTIAL on purpose: one yt-dlp/Gemini pipeline at a time is the only safe
+// load on a 512MB/0.1-vCPU host (parallel generates also clobber the shared
+// web/ dir). Analysis results go to the existing disk cache (.cache/an_*) —
+// the bulk view shows status only, not the analysis. serverKey stays IN MEMORY
+// (never written to disk); everything else persists so a refresh keeps state.
+const BULK = { job: null };
+function bulkFile(id) { return path.join(CACHE_DIR, 'bulk_' + id + '.json'); }
+function saveBulk(job) {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const safe = { ...job, items: job.items.map(({ serverKey, ...rest }) => ({ ...rest, hasServerKey: !!serverKey })) };
+    fs.writeFileSync(bulkFile(job.id), JSON.stringify(safe));
+  } catch { /* non-fatal */ }
+}
+function bulkPublic(job) {
+  return { ...job, items: job.items.map(({ serverKey, storefrontKey, ...rest }) => ({ ...rest, hasServerKey: !!serverKey, hasStorefrontKey: !!storefrontKey })) };
+}
+const bulkBusy = () => BULK.job && ['analyzing', 'generating'].includes(BULK.job.phase);
+
+async function bulkAnalyzeLoop(job) {
+  for (const it of job.items) {
+    if (job.cancelled) break;
+    it.status = 'analyzing'; saveBulk(job);
+    try {
+      const { profile } = await getAnalysis(it.url, {}); // disk-cached for the later generate
+      it.name = profile.channel.name;
+      it.subs = profile.channel.subscribers ?? null;
+      it.totalText = profile.channel.videoCountText || null;
+      it.status = 'analyzed';
+    } catch (e) { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
+    saveBulk(job);
+  }
+  job.phase = job.cancelled ? 'cancelled' : 'keys'; saveBulk(job);
+}
+
+async function bulkGenerateLoop(job) {
+  job.phase = 'generating'; saveBulk(job);
+  const self = 'http://127.0.0.1:' + PORT;
+  for (const it of job.items) {
+    if (job.cancelled) break;
+    if (it.status !== 'analyzed' && it.status !== 'gen-failed') continue;
+    it.status = 'generating'; saveBulk(job);
+    try {
+      // reuse the battle-tested /api/generate pipeline via self-fetch (analysis
+      // + copy are disk-cached from the analyze phase → no duplicate work).
+      const body = { url: it.url, publish: job.publish !== false };
+      if (it.siteHost && it.storefrontKey) { body.siteHost = it.siteHost; body.storefrontKey = it.storefrontKey; }
+      const r = await fetch(self + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'generate 실패');
+      it.publicUrl = j.publicUrl || null;
+      it.counts = j.counts || null;
+      // runmoa 콘텐츠 등록은 serverKey를 준 채널만
+      if (it.serverKey && it.siteHost) {
+        const dr = await fetch(self + '/api/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: it.url, siteHost: it.siteHost, storefrontKey: it.storefrontKey, serverKey: it.serverKey }) });
+        const dj = await dr.json();
+        it.runmoa = dj.ok
+          ? { created: (dj.created || []).length, updated: (dj.updated || []).length, failed: (dj.failed || []).length }
+          : { error: (dj.error || dj.step || 'deploy 실패').slice(0, 160) };
+      }
+      it.status = 'done';
+    } catch (e) { it.status = 'gen-failed'; it.error = String(e.message).slice(0, 180); }
+    saveBulk(job);
+  }
+  job.phase = job.cancelled ? 'cancelled' : 'done'; saveBulk(job);
+}
+
+async function apiBulk(req, res, url) {
+  if (req.method === 'POST' && url === '/api/bulk/start') {
+    const body = await readBody(req);
+    const urls = [...new Set((body.urls || []).map((u) => String(u).trim()).filter(Boolean))].slice(0, 60);
+    if (!urls.length) return send(res, 400, { error: 'urls 필요 (한 줄에 하나)' });
+    if (bulkBusy()) return send(res, 409, { error: '이미 대량 작업이 진행 중입니다', id: BULK.job.id });
+    BULK.job = {
+      id: Date.now().toString(36), phase: 'analyzing', publish: body.publish !== false,
+      startedAt: new Date().toISOString(), cancelled: false,
+      items: urls.map((u) => ({ url: u, status: 'queued' })),
+    };
+    saveBulk(BULK.job);
+    bulkAnalyzeLoop(BULK.job); // fire-and-forget; poll /api/bulk/status
+    return send(res, 200, { ok: true, id: BULK.job.id, count: urls.length });
+  }
+  if (url === '/api/bulk/status') {
+    if (!BULK.job) return send(res, 200, { ok: true, job: null });
+    return send(res, 200, { ok: true, job: bulkPublic(BULK.job) });
+  }
+  if (req.method === 'POST' && url === '/api/bulk/keys') {
+    const body = await readBody(req);
+    if (!BULK.job || BULK.job.id !== body.id) return send(res, 404, { error: '작업 없음' });
+    for (const k of (body.keys || [])) {
+      const it = BULK.job.items.find((x) => x.url === k.url);
+      if (!it) continue;
+      if (k.siteHost != null) it.siteHost = String(k.siteHost).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+      if (k.storefrontKey != null) it.storefrontKey = String(k.storefrontKey).trim();
+      if (k.serverKey != null) it.serverKey = String(k.serverKey).trim(); // memory only
+    }
+    saveBulk(BULK.job);
+    return send(res, 200, { ok: true });
+  }
+  if (req.method === 'POST' && url === '/api/bulk/generate') {
+    const body = await readBody(req);
+    if (!BULK.job || BULK.job.id !== body.id) return send(res, 404, { error: '작업 없음' });
+    if (bulkBusy()) return send(res, 409, { error: '이미 진행 중' });
+    bulkGenerateLoop(BULK.job); // fire-and-forget
+    return send(res, 200, { ok: true });
+  }
+  if (req.method === 'POST' && url === '/api/bulk/cancel') {
+    if (BULK.job) { BULK.job.cancelled = true; saveBulk(BULK.job); }
+    return send(res, 200, { ok: true });
+  }
+  return send(res, 404, { error: 'unknown bulk endpoint' });
+}
+
 // ── server ────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   if (req.method === 'POST' && url === '/api/analyze') return apiAnalyze(req, res);
   if (req.method === 'POST' && url === '/api/generate') return apiGenerate(req, res);
   if (req.method === 'POST' && url === '/api/deploy') return apiDeploy(req, res);
+  if (url.startsWith('/api/bulk/')) return apiBulk(req, res, url);
 
   // which build is this host running? (Render sets RENDER_GIT_COMMIT)
   if (url === '/api/version') {

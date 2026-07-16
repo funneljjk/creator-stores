@@ -355,4 +355,81 @@
     wiz.innerHTML = '<section class="step"><div class="err-box">⚠ 분석 실패: ' + esc(msg) +
       '<br><br><button class="btn btn--ghost" onclick="location.reload()">다시 시도</button></div></section>';
   }
+
+  // ── BULK MODE: 40-50 channels → analyze all → per-channel keys → generate ──
+  (function bulk() {
+    var open = document.getElementById('bulkOpen');
+    var box = document.getElementById('bulkBox');
+    if (!open || !box) return;
+    var tbl = document.getElementById('bulkTable');
+    var startBtn = document.getElementById('bulkStart');
+    var cancelBtn = document.getElementById('bulkCancel');
+    var pollTimer = null;
+
+    open.addEventListener('click', function (e) { e.preventDefault(); box.hidden = !box.hidden; if (!box.hidden) poll(); });
+
+    startBtn.addEventListener('click', function () {
+      var urls = document.getElementById('bulkUrls').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (!urls.length) return alert('유튜브 링크를 한 줄에 하나씩 넣어주세요');
+      if (urls.length > 50) return alert('한 번에 최대 50개까지');
+      startBtn.disabled = true;
+      api('/api/bulk/start', { urls: urls }).then(function (r) {
+        startBtn.disabled = false;
+        if (r.error) return alert(r.error);
+        poll();
+      });
+    });
+    cancelBtn.addEventListener('click', function () { api('/api/bulk/cancel', {}).then(poll); });
+
+    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['분석 중…', '#f59e0b'], analyzed: ['분석 완료', '#10b981'], failed: ['분석 실패', '#ef4444'], generating: ['생성 중…', '#f59e0b'], done: ['완료 ✓', '#10b981'], 'gen-failed': ['생성 실패', '#ef4444'] };
+    function badge(s) { var m = ST[s] || [s, '#94a3b8']; return '<span style="font-size:11px;font-weight:800;color:#fff;background:' + m[1] + ';border-radius:99px;padding:2px 9px;white-space:nowrap">' + m[0] + '</span>'; }
+
+    function render(job) {
+      if (!job) { tbl.innerHTML = ''; cancelBtn.hidden = true; return; }
+      cancelBtn.hidden = !(job.phase === 'analyzing' || job.phase === 'generating');
+      var canGen = job.phase === 'keys' || job.phase === 'done' || job.phase === 'cancelled';
+      var doneN = job.items.filter(function (i) { return i.status === 'done'; }).length;
+      var head = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<b style="font-size:13px">진행: ' + esc(job.phase) + ' · 총 ' + job.items.length + '개 · 완료 ' + doneN + '</b>' +
+        (canGen ? '<button type="button" class="btn btn--accent" id="bulkGen">키 저장 + 전체 생성 →</button>' : '') + '</div>';
+      var rows = job.items.map(function (it, i) {
+        var info = it.name ? '<b>' + esc(it.name) + '</b> <span style="color:var(--ink-2s)">' + esc(it.totalText || '') + '</span>' : '<span style="color:var(--ink-2s)">' + esc(it.url) + '</span>';
+        var link = it.publicUrl ? ' · <a href="' + esc(it.publicUrl) + '" target="_blank" rel="noopener">' + esc(it.publicUrl.replace('https://', '')) + '</a>' : '';
+        var runmoa = it.runmoa ? (it.runmoa.error ? ' · <span style="color:#ef4444">runmoa: ' + esc(it.runmoa.error) + '</span>' : ' · runmoa 신규 ' + it.runmoa.created + '/업데이트 ' + it.runmoa.updated) : '';
+        var err = it.error ? '<div style="color:#ef4444;font-size:11.5px;margin-top:2px">' + esc(it.error) + '</div>' : '';
+        var keys = '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
+          '<input data-bk="siteHost" data-i="' + i + '" placeholder="siteHost (xxx.runmoa.com)" value="' + esc(it.siteHost || '') + '" style="flex:1;min-width:150px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
+          '<input data-bk="storefrontKey" data-i="' + i + '" placeholder="moa_pub_… (스토어 연동)" value="' + (it.hasStorefrontKey ? '••저장됨••' : '') + '" style="flex:2;min-width:180px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
+          '<input data-bk="serverKey" data-i="' + i + '" type="password" placeholder="서버키 (선택 — runmoa 등록까지)" value="" style="flex:2;min-width:180px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
+          '</div>' + (it.hasServerKey ? '<div style="font-size:11px;color:var(--ink-2s);margin-top:2px">서버키 저장됨 (메모리에만 보관)</div>' : '');
+        return '<div style="border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff">' +
+          '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div style="min-width:0">' + info + link + runmoa + err + '</div>' + badge(it.status) + '</div>' +
+          (it.status === 'analyzed' || it.status === 'gen-failed' || it.status === 'done' ? keys : '') + '</div>';
+      }).join('');
+      tbl.innerHTML = head + rows;
+      var gen = document.getElementById('bulkGen');
+      if (gen) gen.addEventListener('click', function () {
+        var keys = job.items.map(function (it, i) {
+          var g = function (k) { var el = tbl.querySelector('input[data-bk="' + k + '"][data-i="' + i + '"]'); return el ? el.value.trim() : ''; };
+          var sf = g('storefrontKey'); var sv = g('serverKey');
+          return { url: it.url, siteHost: g('siteHost'), storefrontKey: (sf && sf.indexOf('••') < 0) ? sf : undefined, serverKey: sv || undefined };
+        });
+        gen.disabled = true;
+        api('/api/bulk/keys', { id: job.id, keys: keys }).then(function () {
+          return api('/api/bulk/generate', { id: job.id });
+        }).then(function (r) { if (r && r.error) alert(r.error); poll(); });
+      });
+    }
+
+    function poll() {
+      clearTimeout(pollTimer);
+      fetch('/api/bulk/status').then(function (r) { return r.json(); }).then(function (r) {
+        // 키 입력 중 재렌더로 입력값 날아가지 않게: 진행 중일 때만 자동 갱신
+        var job = r.job;
+        var typing = document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute('data-bk');
+        if (!typing) render(job);
+        if (job && (job.phase === 'analyzing' || job.phase === 'generating')) pollTimer = setTimeout(poll, 5000);
+      }).catch(function () { pollTimer = setTimeout(poll, 8000); });
+    }
+  })();
 })();
