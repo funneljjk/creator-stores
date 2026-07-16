@@ -29,11 +29,26 @@ export const log = {
 
 /**
  * Run a command, capturing stdout. Rejects on non-zero exit.
+ * Active children are tracked so killActiveChildren() (bulk 중단) can stop
+ * an in-flight yt-dlp immediately instead of waiting minutes for it to finish.
  * @returns {Promise<string>} stdout
  */
+const ACTIVE_CHILDREN = new Set();
+// Abort window: for a few seconds after killActiveChildren(), refuse NEW spawns
+// too — otherwise the yt-dlp client-fallback loop just respawns what we killed
+// and a "cancel" takes 30s+ to actually take hold.
+let ABORT_UNTIL = 0;
+export function killActiveChildren() {
+  ABORT_UNTIL = Date.now() + 3000;
+  let n = 0;
+  for (const child of ACTIVE_CHILDREN) { try { child.kill('SIGKILL'); n++; } catch { /* already dead */ } }
+  return n;
+}
 export function run(cmd, args = [], { timeoutMs = 120000 } = {}) {
   return new Promise((resolve, reject) => {
+    if (Date.now() < ABORT_UNTIL) return reject(new Error('aborted (cancel in progress)'));
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    ACTIVE_CHILDREN.add(child);
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
@@ -44,10 +59,12 @@ export function run(cmd, args = [], { timeoutMs = 120000 } = {}) {
     child.stderr.on('data', (d) => (err += d));
     child.on('error', (e) => {
       clearTimeout(timer);
+      ACTIVE_CHILDREN.delete(child);
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      ACTIVE_CHILDREN.delete(child);
       if (code === 0) resolve(out);
       else reject(new Error(`${cmd} exited ${code}: ${err.trim().slice(0, 500)}`));
     });
@@ -81,6 +98,7 @@ export async function ytdlpJSON(args, opts = {}) {
   const clients = opts.clients || YT_CLIENTS;
   let lastErr;
   for (const client of clients) {
+    if (Date.now() < ABORT_UNTIL) throw new Error('aborted (cancel in progress)'); // don't fall back into a fresh spawn mid-cancel
     const clientArg = client === 'default' ? [] : ['--extractor-args', `youtube:player_client=${client}`];
     try {
       const raw = await run('yt-dlp', [...args, ...stable, ...clientArg], opts);

@@ -379,9 +379,15 @@
         poll();
       });
     });
-    cancelBtn.addEventListener('click', function () { api('/api/bulk/cancel', {}).then(poll); });
+    cancelBtn.addEventListener('click', function () {
+      cancelBtn.disabled = true; cancelBtn.textContent = '중단 중…';
+      api('/api/bulk/cancel', {}).then(function () {
+        cancelBtn.disabled = false; cancelBtn.textContent = '중단';
+        poll();
+      });
+    });
 
-    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['분석 중…', '#f59e0b'], analyzed: ['분석 완료', '#10b981'], failed: ['분석 실패', '#ef4444'], generating: ['생성 중…', '#f59e0b'], done: ['완료 ✓', '#10b981'], 'gen-failed': ['생성 실패', '#ef4444'] };
+    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['분석 중…', '#f59e0b'], analyzed: ['분석 완료', '#10b981'], failed: ['분석 실패', '#ef4444'], generating: ['생성 중…', '#f59e0b'], done: ['완료 ✓', '#10b981'], 'gen-failed': ['생성 실패', '#ef4444'], skipped: ['중단됨', '#64748b'] };
     function badge(s) { var m = ST[s] || [s, '#94a3b8']; return '<span style="font-size:11px;font-weight:800;color:#fff;background:' + m[1] + ';border-radius:99px;padding:2px 9px;white-space:nowrap">' + m[0] + '</span>'; }
 
     function render(job) {

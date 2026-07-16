@@ -14,7 +14,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { analyzeChannel, normalizeChannelUrl } from './src/youtube.js';
-import { ytdlpJSON } from './src/util.js';
+import { ytdlpJSON, killActiveChildren } from './src/util.js';
 import { deriveInsights } from './src/analyze.js';
 import { discoverLinks, extractSocials, mergeSocials, blogRssFrom, webSearchSocials, withInferredThreads } from './src/discover.js';
 import { fetchFeed } from './src/feeds.js';
@@ -645,25 +645,41 @@ const bulkBusy = () => BULK.job && ['analyzing', 'generating'].includes(BULK.job
 
 async function bulkAnalyzeLoop(job) {
   for (const it of job.items) {
-    if (job.cancelled) break;
+    if (job.cancelled) { if (it.status === 'queued') it.status = 'skipped'; continue; }
     it.status = 'analyzing'; saveBulk(job);
     try {
-      const { profile } = await getAnalysis(it.url, {}); // disk-cached for the later generate
+      // race the analysis against the cancel flag so 중단 flips the phase in
+      // ~0.5s. Analysis has no side effects beyond warming the disk cache, so
+      // abandoning the in-flight one (post yt-dlp-kill web fetches) is safe.
+      let cancelTimer;
+      const cancelWatch = new Promise((_, rej) => {
+        cancelTimer = setInterval(() => { if (job.cancelled) rej(new Error('cancelled')); }, 500);
+      });
+      const work = getAnalysis(it.url, {}); // disk-cached for the later generate
+      work.catch(() => { /* abandoned on cancel — swallow */ });
+      const { profile } = await Promise.race([work, cancelWatch]).finally(() => clearInterval(cancelTimer));
       it.name = profile.channel.name;
       it.subs = profile.channel.subscribers ?? null;
       it.totalText = profile.channel.videoCountText || null;
       it.status = 'analyzed';
-    } catch (e) { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
+    } catch (e) {
+      // a cancel SIGKILLs the in-flight yt-dlp → that error just means "중단"
+      if (job.cancelled) { it.status = 'skipped'; }
+      else { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
+    }
     saveBulk(job);
   }
   job.phase = job.cancelled ? 'cancelled' : 'keys'; saveBulk(job);
 }
 
 async function bulkGenerateLoop(job) {
-  job.phase = 'generating'; saveBulk(job);
+  job.phase = 'generating'; job.cancelled = false;
+  // a rerun after 중단: items that were analyzed but got skipped become eligible again
+  for (const it of job.items) if (it.status === 'skipped' && it.name) it.status = 'analyzed';
+  saveBulk(job);
   const self = 'http://127.0.0.1:' + PORT;
   for (const it of job.items) {
-    if (job.cancelled) break;
+    if (job.cancelled) { if (it.status === 'analyzed') it.status = 'skipped'; continue; }
     if (it.status !== 'analyzed' && it.status !== 'gen-failed') continue;
     it.status = 'generating'; saveBulk(job);
     try {
@@ -685,7 +701,10 @@ async function bulkGenerateLoop(job) {
           : { error: (dj.error || dj.step || 'deploy 실패').slice(0, 160) };
       }
       it.status = 'done';
-    } catch (e) { it.status = 'gen-failed'; it.error = String(e.message).slice(0, 180); }
+    } catch (e) {
+      if (job.cancelled) { it.status = 'skipped'; }
+      else { it.status = 'gen-failed'; it.error = String(e.message).slice(0, 180); }
+    }
     saveBulk(job);
   }
   job.phase = job.cancelled ? 'cancelled' : 'done'; saveBulk(job);
@@ -731,8 +750,16 @@ async function apiBulk(req, res, url) {
     return send(res, 200, { ok: true });
   }
   if (req.method === 'POST' && url === '/api/bulk/cancel') {
-    if (BULK.job) { BULK.job.cancelled = true; saveBulk(BULK.job); }
-    return send(res, 200, { ok: true });
+    if (BULK.job) {
+      BULK.job.cancelled = true;
+      // stop NOW, not after the current item: kill the in-flight yt-dlp and
+      // mark everything still waiting as skipped (loop confirms on wake).
+      const killed = killActiveChildren();
+      for (const it of BULK.job.items) if (it.status === 'queued') it.status = 'skipped';
+      saveBulk(BULK.job);
+      return send(res, 200, { ok: true, killed });
+    }
+    return send(res, 200, { ok: true, killed: 0 });
   }
   return send(res, 404, { error: 'unknown bulk endpoint' });
 }
