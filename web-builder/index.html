@@ -50,14 +50,15 @@
               &nbsp;·&nbsp; <a href="#" id="bulkOpen"><b>⚡ 대량 생성 (여러 채널 한 번에)</b></a></div>
           </form>
 
-          <!-- ── BULK: paste 40-50 channel links → analyze → per-channel keys → generate all ── -->
+          <!-- ── BULK: one line = 4 values → fully automatic analyze+generate+register ── -->
           <div class="keys" id="bulkBox" hidden>
-            <label style="font-size:13px;font-weight:800;display:block;margin-bottom:6px">⚡ 대량 생성 — 유튜브 링크를 한 줄에 하나씩 (최대 50개)</label>
-            <textarea id="bulkUrls" rows="6" placeholder="https://www.youtube.com/@channel1&#10;@channel2&#10;https://www.youtube.com/channel/UCxxxx" style="width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+            <label style="font-size:13px;font-weight:800;display:block;margin-bottom:6px">⚡ 대량 생성 — 한 줄에 4개 값 (쉼표/공백 구분, 최대 50줄)</label>
+            <div style="font-size:12px;color:var(--ink-2s);margin-bottom:6px">순서: <b>유튜브링크, 사이트주소, 서버API키, 프론트API키(moa_pub_…)</b> — 키를 비우면 스토어만 생성되고 runmoa 등록은 건너뜁니다.</div>
+            <textarea id="bulkUrls" rows="6" placeholder="https://www.youtube.com/@channel1, mysite.runmoa.com, 서버키…, moa_pub_…&#10;@channel2, other.runmoa.com, 서버키…, moa_pub_…&#10;@keys없는채널" style="width:100%;border:1px solid var(--line-2);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-              <button type="button" class="btn btn--accent" id="bulkStart">전체 분석 시작</button>
+              <button type="button" class="btn btn--accent" id="bulkStart">전체 자동 생성 시작</button>
               <button type="button" class="btn btn--ghost" id="bulkCancel" hidden>중단</button>
-              <span id="bulkNote" style="font-size:12px;color:var(--ink-2s)">순차 처리 — 서버 부하 없이 1개씩. 분석 결과는 서버에 저장만 됩니다.</span>
+              <span id="bulkNote" style="font-size:12px;color:var(--ink-2s)">넣으면 끝 — 분석→생성→runmoa 등록까지 순차 자동 처리.</span>
             </div>
             <div id="bulkTable" style="margin-top:14px"></div>
           </div>

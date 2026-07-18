@@ -641,50 +641,36 @@ function saveBulk(job) {
 function bulkPublic(job) {
   return { ...job, items: job.items.map(({ serverKey, storefrontKey, ...rest }) => ({ ...rest, hasServerKey: !!serverKey, hasStorefrontKey: !!storefrontKey })) };
 }
-const bulkBusy = () => BULK.job && ['analyzing', 'generating'].includes(BULK.job.phase);
+const bulkBusy = () => BULK.job && BULK.job.phase === 'running';
 
-async function bulkAnalyzeLoop(job) {
+// ONE-SHOT auto pipeline per line: 유튜브링크 + siteHost + 서버키 + 프론트키가
+// 한 번에 들어오므로 각 채널을 분석→생성/배포→runmoa 등록까지 사람 개입 없이
+// 순차 처리한다.
+async function bulkAutoLoop(job) {
+  const self = 'http://127.0.0.1:' + PORT;
   for (const it of job.items) {
     if (job.cancelled) { if (it.status === 'queued') it.status = 'skipped'; continue; }
+
+    // 1) 분석 — cancel과 race (부작용 없음: 디스크 캐시만 데움 → 즉시 버려도 안전)
     it.status = 'analyzing'; saveBulk(job);
     try {
-      // race the analysis against the cancel flag so 중단 flips the phase in
-      // ~0.5s. Analysis has no side effects beyond warming the disk cache, so
-      // abandoning the in-flight one (post yt-dlp-kill web fetches) is safe.
       let cancelTimer;
       const cancelWatch = new Promise((_, rej) => {
         cancelTimer = setInterval(() => { if (job.cancelled) rej(new Error('cancelled')); }, 500);
       });
-      const work = getAnalysis(it.url, {}); // disk-cached for the later generate
+      const work = getAnalysis(it.url, {});
       work.catch(() => { /* abandoned on cancel — swallow */ });
       const { profile } = await Promise.race([work, cancelWatch]).finally(() => clearInterval(cancelTimer));
       it.name = profile.channel.name;
-      it.subs = profile.channel.subscribers ?? null;
       it.totalText = profile.channel.videoCountText || null;
-      it.status = 'analyzed';
     } catch (e) {
-      // a cancel SIGKILLs the in-flight yt-dlp → that error just means "중단"
-      if (job.cancelled) { it.status = 'skipped'; }
-      else { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
+      if (job.cancelled) { it.status = 'skipped'; } else { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
+      saveBulk(job); continue;
     }
-    saveBulk(job);
-  }
-  job.phase = job.cancelled ? 'cancelled' : 'keys'; saveBulk(job);
-}
 
-async function bulkGenerateLoop(job) {
-  job.phase = 'generating'; job.cancelled = false;
-  // a rerun after 중단: items that were analyzed but got skipped become eligible again
-  for (const it of job.items) if (it.status === 'skipped' && it.name) it.status = 'analyzed';
-  saveBulk(job);
-  const self = 'http://127.0.0.1:' + PORT;
-  for (const it of job.items) {
-    if (job.cancelled) { if (it.status === 'analyzed') it.status = 'skipped'; continue; }
-    if (it.status !== 'analyzed' && it.status !== 'gen-failed') continue;
+    // 2) 생성 + GitHub Pages 배포 (검증된 /api/generate 재사용; 분석 캐시 히트)
     it.status = 'generating'; saveBulk(job);
     try {
-      // reuse the battle-tested /api/generate pipeline via self-fetch (analysis
-      // + copy are disk-cached from the analyze phase → no duplicate work).
       const body = { url: it.url, publish: job.publish !== false };
       if (it.siteHost && it.storefrontKey) { body.siteHost = it.siteHost; body.storefrontKey = it.storefrontKey; }
       const r = await fetch(self + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -692,20 +678,23 @@ async function bulkGenerateLoop(job) {
       if (!j.ok) throw new Error(j.error || 'generate 실패');
       it.publicUrl = j.publicUrl || null;
       it.counts = j.counts || null;
-      // runmoa 콘텐츠 등록은 serverKey를 준 채널만
-      if (it.serverKey && it.siteHost) {
+    } catch (e) {
+      if (job.cancelled) { it.status = 'skipped'; } else { it.status = 'gen-failed'; it.error = String(e.message).slice(0, 180); }
+      saveBulk(job); continue;
+    }
+
+    // 3) runmoa 콘텐츠 등록 (서버키 있는 채널만; 실패해도 스토어는 이미 라이브)
+    if (it.serverKey && it.siteHost) {
+      it.status = 'registering'; saveBulk(job);
+      try {
         const dr = await fetch(self + '/api/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: it.url, siteHost: it.siteHost, storefrontKey: it.storefrontKey, serverKey: it.serverKey }) });
         const dj = await dr.json();
         it.runmoa = dj.ok
           ? { created: (dj.created || []).length, updated: (dj.updated || []).length, failed: (dj.failed || []).length }
           : { error: (dj.error || dj.step || 'deploy 실패').slice(0, 160) };
-      }
-      it.status = 'done';
-    } catch (e) {
-      if (job.cancelled) { it.status = 'skipped'; }
-      else { it.status = 'gen-failed'; it.error = String(e.message).slice(0, 180); }
+      } catch (e) { it.runmoa = { error: String(e.message).slice(0, 160) }; }
     }
-    saveBulk(job);
+    it.status = 'done'; saveBulk(job);
   }
   job.phase = job.cancelled ? 'cancelled' : 'done'; saveBulk(job);
 }
@@ -713,41 +702,31 @@ async function bulkGenerateLoop(job) {
 async function apiBulk(req, res, url) {
   if (req.method === 'POST' && url === '/api/bulk/start') {
     const body = await readBody(req);
-    const urls = [...new Set((body.urls || []).map((u) => String(u).trim()).filter(Boolean))].slice(0, 60);
-    if (!urls.length) return send(res, 400, { error: 'urls 필요 (한 줄에 하나)' });
+    // entries: [{url, siteHost, serverKey, storefrontKey}] — 한 줄 4개 값.
+    const seen = new Set();
+    const items = (body.entries || [])
+      .map((e) => ({
+        url: String(e.url || '').trim(),
+        siteHost: String(e.siteHost || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim() || undefined,
+        storefrontKey: String(e.storefrontKey || '').trim() || undefined,
+        serverKey: String(e.serverKey || '').trim() || undefined, // memory only
+        status: 'queued',
+      }))
+      .filter((e) => e.url && !seen.has(e.url) && seen.add(e.url))
+      .slice(0, 60);
+    if (!items.length) return send(res, 400, { error: 'entries 필요 (한 줄: 유튜브링크, 사이트주소, 서버키, 프론트키)' });
     if (bulkBusy()) return send(res, 409, { error: '이미 대량 작업이 진행 중입니다', id: BULK.job.id });
     BULK.job = {
-      id: Date.now().toString(36), phase: 'analyzing', publish: body.publish !== false,
-      startedAt: new Date().toISOString(), cancelled: false,
-      items: urls.map((u) => ({ url: u, status: 'queued' })),
+      id: Date.now().toString(36), phase: 'running', publish: body.publish !== false,
+      startedAt: new Date().toISOString(), cancelled: false, items,
     };
     saveBulk(BULK.job);
-    bulkAnalyzeLoop(BULK.job); // fire-and-forget; poll /api/bulk/status
-    return send(res, 200, { ok: true, id: BULK.job.id, count: urls.length });
+    bulkAutoLoop(BULK.job); // fire-and-forget; poll /api/bulk/status
+    return send(res, 200, { ok: true, id: BULK.job.id, count: items.length });
   }
   if (url === '/api/bulk/status') {
     if (!BULK.job) return send(res, 200, { ok: true, job: null });
     return send(res, 200, { ok: true, job: bulkPublic(BULK.job) });
-  }
-  if (req.method === 'POST' && url === '/api/bulk/keys') {
-    const body = await readBody(req);
-    if (!BULK.job || BULK.job.id !== body.id) return send(res, 404, { error: '작업 없음' });
-    for (const k of (body.keys || [])) {
-      const it = BULK.job.items.find((x) => x.url === k.url);
-      if (!it) continue;
-      if (k.siteHost != null) it.siteHost = String(k.siteHost).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
-      if (k.storefrontKey != null) it.storefrontKey = String(k.storefrontKey).trim();
-      if (k.serverKey != null) it.serverKey = String(k.serverKey).trim(); // memory only
-    }
-    saveBulk(BULK.job);
-    return send(res, 200, { ok: true });
-  }
-  if (req.method === 'POST' && url === '/api/bulk/generate') {
-    const body = await readBody(req);
-    if (!BULK.job || BULK.job.id !== body.id) return send(res, 404, { error: '작업 없음' });
-    if (bulkBusy()) return send(res, 409, { error: '이미 진행 중' });
-    bulkGenerateLoop(BULK.job); // fire-and-forget
-    return send(res, 200, { ok: true });
   }
   if (req.method === 'POST' && url === '/api/bulk/cancel') {
     if (BULK.job) {

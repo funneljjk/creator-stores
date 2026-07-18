@@ -368,12 +368,30 @@
 
     open.addEventListener('click', function (e) { e.preventDefault(); box.hidden = !box.hidden; if (!box.hidden) poll(); });
 
+    // 한 줄 = "유튜브링크, 사이트주소, 서버키, 프론트키" (쉼표/공백/탭 구분).
+    // 키 순서가 바뀌어도 moa_pub_ 접두사로 프론트키를 자동 구분한다.
+    function parseLine(line) {
+      var t = line.split(/[\s,]+/).filter(Boolean);
+      if (!t.length) return null;
+      var e = { url: t[0] };
+      for (var i = 1; i < t.length; i++) {
+        var v = t[i];
+        if (/runmoa\.com|schoolmoa|^https?:\/\//i.test(v) && !e.siteHost) e.siteHost = v;
+        else if (/^moa_pub_/i.test(v)) e.storefrontKey = v;
+        else if (v.length > 20 && !e.serverKey) e.serverKey = v;
+        else if (!e.siteHost) e.siteHost = v;
+      }
+      return e;
+    }
     startBtn.addEventListener('click', function () {
-      var urls = document.getElementById('bulkUrls').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-      if (!urls.length) return alert('유튜브 링크를 한 줄에 하나씩 넣어주세요');
-      if (urls.length > 50) return alert('한 번에 최대 50개까지');
+      var lines = document.getElementById('bulkUrls').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (!lines.length) return alert('한 줄에 하나씩 넣어주세요 (유튜브링크, 사이트주소, 서버키, 프론트키)');
+      if (lines.length > 50) return alert('한 번에 최대 50줄까지');
+      var entries = lines.map(parseLine).filter(Boolean);
+      var noKeys = entries.filter(function (e) { return !(e.siteHost && e.storefrontKey && e.serverKey); }).length;
+      if (noKeys && !confirm(noKeys + '개 줄에 키가 비어 있습니다. 해당 채널은 스토어만 생성되고 runmoa 등록은 건너뜁니다. 계속할까요?')) return;
       startBtn.disabled = true;
-      api('/api/bulk/start', { urls: urls }).then(function (r) {
+      api('/api/bulk/start', { entries: entries }).then(function (r) {
         startBtn.disabled = false;
         if (r.error) return alert(r.error);
         poll();
@@ -387,54 +405,33 @@
       });
     });
 
-    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['분석 중…', '#f59e0b'], analyzed: ['분석 완료', '#10b981'], failed: ['분석 실패', '#ef4444'], generating: ['생성 중…', '#f59e0b'], done: ['완료 ✓', '#10b981'], 'gen-failed': ['생성 실패', '#ef4444'], skipped: ['중단됨', '#64748b'] };
+    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['1/3 분석 중…', '#f59e0b'], generating: ['2/3 생성 중…', '#f59e0b'], registering: ['3/3 runmoa 등록…', '#f59e0b'], done: ['완료 ✓', '#10b981'], failed: ['분석 실패', '#ef4444'], 'gen-failed': ['생성 실패', '#ef4444'], skipped: ['중단됨', '#64748b'] };
     function badge(s) { var m = ST[s] || [s, '#94a3b8']; return '<span style="font-size:11px;font-weight:800;color:#fff;background:' + m[1] + ';border-radius:99px;padding:2px 9px;white-space:nowrap">' + m[0] + '</span>'; }
 
     function render(job) {
       if (!job) { tbl.innerHTML = ''; cancelBtn.hidden = true; return; }
-      cancelBtn.hidden = !(job.phase === 'analyzing' || job.phase === 'generating');
-      var canGen = job.phase === 'keys' || job.phase === 'done' || job.phase === 'cancelled';
+      cancelBtn.hidden = job.phase !== 'running';
       var doneN = job.items.filter(function (i) { return i.status === 'done'; }).length;
-      var head = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
-        '<b style="font-size:13px">진행: ' + esc(job.phase) + ' · 총 ' + job.items.length + '개 · 완료 ' + doneN + '</b>' +
-        (canGen ? '<button type="button" class="btn btn--accent" id="bulkGen">키 저장 + 전체 생성 →</button>' : '') + '</div>';
-      var rows = job.items.map(function (it, i) {
+      var head = '<div style="margin-bottom:8px"><b style="font-size:13px">진행: ' +
+        (job.phase === 'running' ? '자동 처리 중' : job.phase === 'done' ? '전체 완료' : esc(job.phase)) +
+        ' · 총 ' + job.items.length + '개 · 완료 ' + doneN + '</b></div>';
+      var rows = job.items.map(function (it) {
         var info = it.name ? '<b>' + esc(it.name) + '</b> <span style="color:var(--ink-2s)">' + esc(it.totalText || '') + '</span>' : '<span style="color:var(--ink-2s)">' + esc(it.url) + '</span>';
-        var link = it.publicUrl ? ' · <a href="' + esc(it.publicUrl) + '" target="_blank" rel="noopener">' + esc(it.publicUrl.replace('https://', '')) + '</a>' : '';
-        var runmoa = it.runmoa ? (it.runmoa.error ? ' · <span style="color:#ef4444">runmoa: ' + esc(it.runmoa.error) + '</span>' : ' · runmoa 신규 ' + it.runmoa.created + '/업데이트 ' + it.runmoa.updated) : '';
+        var keys = (it.hasStorefrontKey || it.hasServerKey) ? '' : ' <span style="font-size:11px;color:#94a3b8">(키 없음 — 스토어만)</span>';
+        var link = it.publicUrl ? '<div style="margin-top:3px;font-size:12.5px"><a href="' + esc(it.publicUrl) + '" target="_blank" rel="noopener">' + esc(it.publicUrl.replace('https://', '')) + '</a></div>' : '';
+        var runmoa = it.runmoa ? (it.runmoa.error ? '<div style="color:#ef4444;font-size:11.5px;margin-top:2px">runmoa: ' + esc(it.runmoa.error) + '</div>' : '<div style="color:#10b981;font-size:11.5px;margin-top:2px">runmoa 등록: 신규 ' + it.runmoa.created + ' · 업데이트 ' + it.runmoa.updated + (it.runmoa.failed ? ' · 실패 ' + it.runmoa.failed : '') + '</div>') : '';
         var err = it.error ? '<div style="color:#ef4444;font-size:11.5px;margin-top:2px">' + esc(it.error) + '</div>' : '';
-        var keys = '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
-          '<input data-bk="siteHost" data-i="' + i + '" placeholder="siteHost (xxx.runmoa.com)" value="' + esc(it.siteHost || '') + '" style="flex:1;min-width:150px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
-          '<input data-bk="storefrontKey" data-i="' + i + '" placeholder="moa_pub_… (스토어 연동)" value="' + (it.hasStorefrontKey ? '••저장됨••' : '') + '" style="flex:2;min-width:180px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
-          '<input data-bk="serverKey" data-i="' + i + '" type="password" placeholder="서버키 (선택 — runmoa 등록까지)" value="" style="flex:2;min-width:180px;border:1px solid var(--line-2);border-radius:8px;padding:7px 9px;font-size:12px">' +
-          '</div>' + (it.hasServerKey ? '<div style="font-size:11px;color:var(--ink-2s);margin-top:2px">서버키 저장됨 (메모리에만 보관)</div>' : '');
         return '<div style="border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff">' +
-          '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div style="min-width:0">' + info + link + runmoa + err + '</div>' + badge(it.status) + '</div>' +
-          (it.status === 'analyzed' || it.status === 'gen-failed' || it.status === 'done' ? keys : '') + '</div>';
+          '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div style="min-width:0">' + info + keys + link + runmoa + err + '</div>' + badge(it.status) + '</div></div>';
       }).join('');
       tbl.innerHTML = head + rows;
-      var gen = document.getElementById('bulkGen');
-      if (gen) gen.addEventListener('click', function () {
-        var keys = job.items.map(function (it, i) {
-          var g = function (k) { var el = tbl.querySelector('input[data-bk="' + k + '"][data-i="' + i + '"]'); return el ? el.value.trim() : ''; };
-          var sf = g('storefrontKey'); var sv = g('serverKey');
-          return { url: it.url, siteHost: g('siteHost'), storefrontKey: (sf && sf.indexOf('••') < 0) ? sf : undefined, serverKey: sv || undefined };
-        });
-        gen.disabled = true;
-        api('/api/bulk/keys', { id: job.id, keys: keys }).then(function () {
-          return api('/api/bulk/generate', { id: job.id });
-        }).then(function (r) { if (r && r.error) alert(r.error); poll(); });
-      });
     }
 
     function poll() {
       clearTimeout(pollTimer);
       fetch('/api/bulk/status').then(function (r) { return r.json(); }).then(function (r) {
-        // 키 입력 중 재렌더로 입력값 날아가지 않게: 진행 중일 때만 자동 갱신
-        var job = r.job;
-        var typing = document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute('data-bk');
-        if (!typing) render(job);
-        if (job && (job.phase === 'analyzing' || job.phase === 'generating')) pollTimer = setTimeout(poll, 5000);
+        render(r.job);
+        if (r.job && r.job.phase === 'running') pollTimer = setTimeout(poll, 5000);
       }).catch(function () { pollTimer = setTimeout(poll, 8000); });
     }
   })();
