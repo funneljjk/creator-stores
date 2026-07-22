@@ -302,7 +302,10 @@ async function genThumbnails(catalog, key) {
     ...(catalog.products || []).map((o) => ({ o, kind: 'product' })),
   ];
   let n = 0;
-  await mapLimit(list, 4, async (it) => {
+  // low-mem host: 2 concurrent image generations, not 4 — each holds a multi-MB
+  // base64 + Buffer, and a long bulk run at 4-wide OOM-killed the container
+  // mid-job (restart wiped the in-memory bulk state).
+  await mapLimit(list, (process.env.RENDER || process.env.LOW_MEM) ? 2 : 4, async (it) => {
     const name = genImgName(it.o), file = path.join(GENIMG_DIR, name);
     try {
       if (!fs.existsSync(file)) {
