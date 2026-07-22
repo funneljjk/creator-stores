@@ -415,16 +415,32 @@
       var head = '<div style="margin-bottom:8px"><b style="font-size:13px">진행: ' +
         (job.phase === 'running' ? '자동 처리 중' : job.phase === 'done' ? '전체 완료' : esc(job.phase)) +
         ' · 총 ' + job.items.length + '개 · 완료 ' + doneN + '</b></div>';
-      var rows = job.items.map(function (it) {
+      var rows = job.items.map(function (it, idx) {
         var info = it.name ? '<b>' + esc(it.name) + '</b> <span style="color:var(--ink-2s)">' + esc(it.totalText || '') + '</span>' : '<span style="color:var(--ink-2s)">' + esc(it.url) + '</span>';
         var keys = (it.hasStorefrontKey || it.hasServerKey) ? '' : ' <span style="font-size:11px;color:#94a3b8">(키 없음 — 스토어만)</span>';
-        var link = it.publicUrl ? '<div style="margin-top:3px;font-size:12.5px"><a href="' + esc(it.publicUrl) + '" target="_blank" rel="noopener">' + esc(it.publicUrl.replace('https://', '')) + '</a></div>' : '';
+        var link = it.publicUrl
+          ? '<div style="margin-top:3px;font-size:12.5px"><a href="' + esc(it.publicUrl) + '" target="_blank" rel="noopener">' + esc(it.publicUrl.replace('https://', '')) + '</a>' +
+            ' · <a href="#" data-bprev="' + idx + '" data-url="' + esc(it.publicUrl) + '">미리보기 ▾</a></div>' +
+            '<div id="bprev-' + idx + '" hidden style="margin-top:8px;border:1px solid var(--line-2);border-radius:10px;overflow:hidden"></div>'
+          : '';
         var runmoa = it.runmoa ? (it.runmoa.error ? '<div style="color:#ef4444;font-size:11.5px;margin-top:2px">runmoa: ' + esc(it.runmoa.error) + '</div>' : '<div style="color:#10b981;font-size:11.5px;margin-top:2px">runmoa 등록: 신규 ' + it.runmoa.created + ' · 업데이트 ' + it.runmoa.updated + (it.runmoa.failed ? ' · 실패 ' + it.runmoa.failed : '') + '</div>') : '';
         var err = it.error ? '<div style="color:#ef4444;font-size:11.5px;margin-top:2px">' + esc(it.error) + '</div>' : '';
         return '<div style="border:1px solid var(--line-2);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff">' +
-          '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><div style="min-width:0">' + info + keys + link + runmoa + err + '</div>' + badge(it.status) + '</div></div>';
+          '<div style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between"><div style="min-width:0;flex:1">' + info + keys + link + runmoa + err + '</div>' + badge(it.status) + '</div></div>';
       }).join('');
       tbl.innerHTML = head + rows;
+      // 미리보기 토글: 완성된 스토어를 행 안 iframe으로 바로 확인
+      [].slice.call(tbl.querySelectorAll('[data-bprev]')).forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          var box = document.getElementById('bprev-' + a.getAttribute('data-bprev'));
+          if (!box) return;
+          if (box.hidden) {
+            if (!box.firstChild) box.innerHTML = '<iframe src="' + a.getAttribute('data-url') + '" style="width:100%;height:420px;border:0" loading="lazy"></iframe>';
+            box.hidden = false; a.textContent = '미리보기 ▴';
+          } else { box.hidden = true; a.textContent = '미리보기 ▾'; }
+        });
+      });
     }
 
     function poll() {
