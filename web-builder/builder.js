@@ -391,7 +391,8 @@
       var noKeys = entries.filter(function (e) { return !(e.siteHost && e.storefrontKey && e.serverKey); }).length;
       if (noKeys && !confirm(noKeys + '개 줄에 키가 비어 있습니다. 해당 채널은 스토어만 생성되고 runmoa 등록은 건너뜁니다. 계속할까요?')) return;
       startBtn.disabled = true;
-      api('/api/bulk/start', { entries: entries }).then(function (r) {
+      var resumeEl = document.getElementById('bulkResume');
+      api('/api/bulk/start', { entries: entries, resume: !resumeEl || resumeEl.checked }).then(function (r) {
         startBtn.disabled = false;
         if (r.error) return alert(r.error);
         poll();
@@ -405,7 +406,7 @@
       });
     });
 
-    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['1/3 분석 중…', '#f59e0b'], generating: ['2/3 생성 중…', '#f59e0b'], registering: ['3/3 runmoa 등록…', '#f59e0b'], done: ['완료 ✓', '#10b981'], failed: ['분석 실패', '#ef4444'], 'gen-failed': ['생성 실패', '#ef4444'], skipped: ['중단됨', '#64748b'] };
+    var ST = { queued: ['대기', '#94a3b8'], analyzing: ['1/3 분석 중…', '#f59e0b'], generating: ['2/3 생성 중…', '#f59e0b'], registering: ['3/3 runmoa 등록…', '#f59e0b'], done: ['완료 ✓', '#10b981'], exists: ['기존 ✓ 건너뜀', '#0ea5e9'], failed: ['분석 실패', '#ef4444'], 'gen-failed': ['생성 실패', '#ef4444'], skipped: ['중단됨', '#64748b'] };
     function badge(s) { var m = ST[s] || [s, '#94a3b8']; return '<span style="font-size:11px;font-weight:800;color:#fff;background:' + m[1] + ';border-radius:99px;padding:2px 9px;white-space:nowrap">' + m[0] + '</span>'; }
 
     function render(job) {

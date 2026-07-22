@@ -646,6 +646,18 @@ function bulkPublic(job) {
 }
 const bulkBusy = () => BULK.job && BULK.job.phase === 'running';
 
+// GitHub Pages owner (for the resume-skip probe). Resolved once via gh.
+let GH_OWNER = null;
+function ghOwner() {
+  if (GH_OWNER !== null) return Promise.resolve(GH_OWNER);
+  return new Promise((resolve) => {
+    execFile('gh', ['api', 'user', '--jq', '.login'], { timeout: 15000 }, (err, stdout) => {
+      GH_OWNER = err ? '' : String(stdout).trim();
+      resolve(GH_OWNER);
+    });
+  });
+}
+
 // ONE-SHOT auto pipeline per line: 유튜브링크 + siteHost + 서버키 + 프론트키가
 // 한 번에 들어오므로 각 채널을 분석→생성/배포→runmoa 등록까지 사람 개입 없이
 // 순차 처리한다.
@@ -656,6 +668,7 @@ async function bulkAutoLoop(job) {
 
     // 1) 분석 — cancel과 race (부작용 없음: 디스크 캐시만 데움 → 즉시 버려도 안전)
     it.status = 'analyzing'; saveBulk(job);
+    let profile;
     try {
       let cancelTimer;
       const cancelWatch = new Promise((_, rej) => {
@@ -663,12 +676,30 @@ async function bulkAutoLoop(job) {
       });
       const work = getAnalysis(it.url, {});
       work.catch(() => { /* abandoned on cancel — swallow */ });
-      const { profile } = await Promise.race([work, cancelWatch]).finally(() => clearInterval(cancelTimer));
+      ({ profile } = await Promise.race([work, cancelWatch]).finally(() => clearInterval(cancelTimer)));
       it.name = profile.channel.name;
       it.totalText = profile.channel.videoCountText || null;
     } catch (e) {
       if (job.cancelled) { it.status = 'skipped'; } else { it.status = 'failed'; it.error = String(e.message).slice(0, 180); }
       saveBulk(job); continue;
+    }
+
+    // 1.5) 이어하기: 이미 발행된 스토어가 있으면 건너뜀 — 512MB 호스트가 긴
+    // 대량 실행 중 OOM으로 죽어도, 같은 목록을 다시 붙여넣으면 완성분은 여기서
+    // 몇 초 만에 스킵되고 나머지만 이어서 만든다. (같은 채널명이 박힌 data.js가
+    // 그 slug에 살아 있을 때만 — 다른 채널/빈 repo면 정상 생성 진행)
+    if (job.resume !== false) {
+      try {
+        const owner = await ghOwner();
+        if (owner) {
+          const slug = storeSlug(profile, { url: it.url });
+          const pr = await fetch(`https://${owner}.github.io/${slug}/js/data.js`, { signal: AbortSignal.timeout(10000) });
+          if (pr.ok && (await pr.text()).includes(JSON.stringify(profile.channel.name || '').slice(1, -1))) {
+            it.publicUrl = `https://${owner}.github.io/${slug}/`;
+            it.status = 'exists'; saveBulk(job); continue;
+          }
+        }
+      } catch { /* probe 실패 → 그냥 생성 진행 */ }
     }
 
     // 2) 생성 + GitHub Pages 배포 (검증된 /api/generate 재사용; 분석 캐시 히트)
@@ -721,6 +752,7 @@ async function apiBulk(req, res, url) {
     if (bulkBusy()) return send(res, 409, { error: '이미 대량 작업이 진행 중입니다', id: BULK.job.id });
     BULK.job = {
       id: Date.now().toString(36), phase: 'running', publish: body.publish !== false,
+      resume: body.resume !== false, // 기본 on: 이미 발행된 스토어는 건너뜀 (이어하기)
       startedAt: new Date().toISOString(), cancelled: false, items,
     };
     saveBulk(BULK.job);
