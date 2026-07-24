@@ -62,7 +62,8 @@ function parseItems(xml, limit) {
 export async function fetchFeed(rssUrl, limit = 6) {
   if (!rssUrl) return { posts: [] };
   try {
-    const res = await fetch(rssUrl, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' } });
+    // signal 필수: 응답 없는 블로그 RSS 서버가 대량 작업을 42시간 hang시킨 전례
+    const res = await fetch(rssUrl, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) return { posts: [], error: `feed ${res.status}` };
     const xml = await res.text();
     return { posts: parseItems(xml, limit) };

@@ -106,7 +106,7 @@ export function blogRssFrom(link) {
 
 async function fetchAbout(channelUrl) {
   const base = normalizeChannelUrl(channelUrl);
-  const res = await fetch(base + '/about', { headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8' } });
+  const res = await fetch(base + '/about', { headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8' }, signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`about ${res.status}`);
   return res.text();
 }

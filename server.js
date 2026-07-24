@@ -666,17 +666,20 @@ async function bulkAutoLoop(job) {
   for (const it of job.items) {
     if (job.cancelled) { if (it.status === 'queued') it.status = 'skipped'; continue; }
 
-    // 1) 분석 — cancel과 race (부작용 없음: 디스크 캐시만 데움 → 즉시 버려도 안전)
+    // 1) 분석 — cancel + 하드 타임아웃과 race. 타임아웃 없는 외부 fetch 하나가
+    // 대량 작업 전체를 42시간 hang시킨 전례 → 어떤 단계도 영원히 못 기다린다.
+    // (분석은 부작용 없음: 디스크 캐시만 데움 → 즉시 버려도 안전)
     it.status = 'analyzing'; saveBulk(job);
     let profile;
     try {
-      let cancelTimer;
+      let cancelTimer, deadTimer;
       const cancelWatch = new Promise((_, rej) => {
         cancelTimer = setInterval(() => { if (job.cancelled) rej(new Error('cancelled')); }, 500);
+        deadTimer = setTimeout(() => rej(new Error('분석 타임아웃 (12분) — 채널 건너뜀')), 12 * 60 * 1000);
       });
       const work = getAnalysis(it.url, {});
-      work.catch(() => { /* abandoned on cancel — swallow */ });
-      ({ profile } = await Promise.race([work, cancelWatch]).finally(() => clearInterval(cancelTimer)));
+      work.catch(() => { /* abandoned on cancel/timeout — swallow */ });
+      ({ profile } = await Promise.race([work, cancelWatch]).finally(() => { clearInterval(cancelTimer); clearTimeout(deadTimer); }));
       it.name = profile.channel.name;
       it.totalText = profile.channel.videoCountText || null;
     } catch (e) {
@@ -707,7 +710,7 @@ async function bulkAutoLoop(job) {
     try {
       const body = { url: it.url, publish: job.publish !== false };
       if (it.siteHost && it.storefrontKey) { body.siteHost = it.siteHost; body.storefrontKey = it.storefrontKey; }
-      const r = await fetch(self + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await fetch(self + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25 * 60 * 1000) });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'generate 실패');
       it.publicUrl = j.publicUrl || null;
@@ -721,7 +724,7 @@ async function bulkAutoLoop(job) {
     if (it.serverKey && it.siteHost) {
       it.status = 'registering'; saveBulk(job);
       try {
-        const dr = await fetch(self + '/api/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: it.url, siteHost: it.siteHost, storefrontKey: it.storefrontKey, serverKey: it.serverKey }) });
+        const dr = await fetch(self + '/api/deploy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: it.url, siteHost: it.siteHost, storefrontKey: it.storefrontKey, serverKey: it.serverKey }), signal: AbortSignal.timeout(15 * 60 * 1000) });
         const dj = await dr.json();
         it.runmoa = dj.ok
           ? { created: (dj.created || []).length, updated: (dj.updated || []).length, failed: (dj.failed || []).length }
